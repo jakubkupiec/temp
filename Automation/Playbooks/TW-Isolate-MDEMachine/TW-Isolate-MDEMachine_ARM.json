@@ -1,0 +1,1349 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "workflows_TW_Isolate_MDEMachine_name": {
+            "defaultValue": "TW-Isolate-MDEMachine",
+            "type": "String"
+        },
+        "connections_azuresentinel_6_externalid": {
+            "defaultValue": "/subscriptions/69e238c0-023f-455f-8432-013a258cf548/resourceGroups/3PSIEM/providers/Microsoft.Web/connections/azuresentinel-6",
+            "type": "String"
+        },
+        "connections_wdatp_externalid": {
+            "defaultValue": "/subscriptions/69e238c0-023f-455f-8432-013a258cf548/resourceGroups/3PSIEM/providers/Microsoft.Web/connections/wdatp",
+            "type": "String"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('workflows_TW_Isolate_MDEMachine_name')]",
+            "location": "eastus",
+            "tags": {
+                "LogicAppsCategory": "security",
+                "hidden-SentinelTemplateName": "Isolate-MDEMachine",
+                "hidden-SentinelTemplateVersion": "1.0",
+                "team": "PEC",
+                "owner": "mssulivan"
+            },
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "Fusion-Token": {
+                            "defaultValue": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJjcmVhdGVkIjoiMjAyMC0wNS0xNVQxNToyODo0NC45NzRaIiwidXNlcklkIjoyNTY5OTk1LCJ0d0NsaWVudElkIjoiNWE5YTg5NjctNjMzYS00OTliLTliNTItZTU0NmY4OWExZTJkIn0.MReqseq8l6NuBIwes_zCBuQm2D869_4awZMj7ZdxJZQ",
+                            "type": "String"
+                        },
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "Microsoft_Sentinel_incident": {
+                            "type": "ApiConnectionWebhook",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                    }
+                                },
+                                "body": {
+                                    "callback_url": "@{listCallbackUrl()}"
+                                },
+                                "path": "/incident-creation"
+                            }
+                        }
+                    },
+                    "actions": {
+                        "Entities_-_Get_Hosts": {
+                            "runAfter": {
+                                "Initialize_fusion_ticket_variable": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                    }
+                                },
+                                "method": "post",
+                                "body": "@triggerBody()?['object']?['properties']?['relatedEntities']",
+                                "path": "/entities/host"
+                            }
+                        },
+                        "For_each": {
+                            "foreach": "@body('Entities_-_Get_Hosts')?['Hosts']",
+                            "actions": {
+                                "Check_for_Machine_ID": {
+                                    "actions": {
+                                        "Machines_-_Get_single_machine": {
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['wdatp']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "get",
+                                                "path": "/api/machines/@{encodeURIComponent(items('For_each')?['additionalData']?['MdatpDeviceId'])}"
+                                            }
+                                        },
+                                        "Authorization_Permitted": {
+                                            "actions": {
+                                                "Actions_-_Isolate_machine": {
+                                                    "type": "ApiConnection",
+                                                    "inputs": {
+                                                        "host": {
+                                                            "connection": {
+                                                                "name": "@parameters('$connections')['wdatp']['connectionId']"
+                                                            }
+                                                        },
+                                                        "method": "post",
+                                                        "body": {
+                                                            "Comment": "Isolated from playbook for Azure Sentinel Incident:  @{triggerBody()?['object']?['properties']?['incidentNumber']} - @{triggerBody()?['object']?['properties']?['title']}",
+                                                            "IsolationType": "Full"
+                                                        },
+                                                        "path": "/api/machines/@{encodeURIComponent(items('For_each')?['additionalData']?['MdatpDeviceId'])}/isolate"
+                                                    }
+                                                },
+                                                "Add_comment_to_incident_for_authorized_group": {
+                                                    "runAfter": {
+                                                        "Actions_-_Isolate_machine": [
+                                                            "Succeeded"
+                                                        ]
+                                                    },
+                                                    "type": "ApiConnection",
+                                                    "inputs": {
+                                                        "host": {
+                                                            "connection": {
+                                                                "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                                            }
+                                                        },
+                                                        "method": "post",
+                                                        "body": {
+                                                            "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                            "message": "<p class=\"editor-paragraph\">@{body('Machines_-_Get_single_machine')?['computerDnsName']} has been requested to be isolated by @{body('Actions_-_Isolate_machine')?['requestor']} in MDE and the status was @{body('Actions_-_Isolate_machine')?['status']} at the time of this comment.  We will also attempt to update the Trustwave Fusion Finding and Fusion Ticket.</p>"
+                                                        },
+                                                        "path": "/Incidents/Comment"
+                                                    }
+                                                },
+                                                "Fusion_Finding_Update": {
+                                                    "actions": {
+                                                        "HTTP_-_Get_Fusion_Finding_based_on_Sentinel_ID": {
+                                                            "type": "Http",
+                                                            "inputs": {
+                                                                "uri": "https://api.fusion.trustwave.com/v2/findings?detail=%22%2A@{triggerBody()?['object']?['properties']?['providerIncidentId']}%2A%22",
+                                                                "method": "GET",
+                                                                "headers": {
+                                                                    "Authorization": "Bearer @{parameters('Fusion-Token')}",
+                                                                    "accept": "application/json"
+                                                                }
+                                                            }
+                                                        },
+                                                        "Parse_Fusion_Finding": {
+                                                            "runAfter": {
+                                                                "HTTP_-_Get_Fusion_Finding_based_on_Sentinel_ID": [
+                                                                    "Succeeded"
+                                                                ]
+                                                            },
+                                                            "type": "ParseJson",
+                                                            "inputs": {
+                                                                "content": "@body('HTTP_-_Get_Fusion_Finding_based_on_Sentinel_ID')",
+                                                                "schema": {
+                                                                    "properties": {
+                                                                        "items": {
+                                                                            "items": {
+                                                                                "properties": {
+                                                                                    "analystNotes": {
+                                                                                        "type": "array"
+                                                                                    },
+                                                                                    "child": {
+                                                                                        "type": "boolean"
+                                                                                    },
+                                                                                    "classification": {
+                                                                                        "type": "string"
+                                                                                    },
+                                                                                    "createdOn": {
+                                                                                        "type": "string"
+                                                                                    },
+                                                                                    "customerId": {
+                                                                                        "type": "integer"
+                                                                                    },
+                                                                                    "customerName": {
+                                                                                        "type": "string"
+                                                                                    },
+                                                                                    "destination": {},
+                                                                                    "detail": {
+                                                                                        "type": "string"
+                                                                                    },
+                                                                                    "id": {
+                                                                                        "type": "string"
+                                                                                    },
+                                                                                    "priority": {
+                                                                                        "type": "integer"
+                                                                                    },
+                                                                                    "severity": {
+                                                                                        "type": "integer"
+                                                                                    },
+                                                                                    "soarAction": {},
+                                                                                    "source": {},
+                                                                                    "sourceSystem": {
+                                                                                        "type": "string"
+                                                                                    },
+                                                                                    "status": {},
+                                                                                    "summary": {
+                                                                                        "type": "string"
+                                                                                    },
+                                                                                    "type": {
+                                                                                        "type": "string"
+                                                                                    },
+                                                                                    "updatedOn": {
+                                                                                        "type": "string"
+                                                                                    }
+                                                                                },
+                                                                                "required": [
+                                                                                    "analystNotes",
+                                                                                    "child",
+                                                                                    "classification",
+                                                                                    "createdOn",
+                                                                                    "customerId",
+                                                                                    "customerName",
+                                                                                    "destination",
+                                                                                    "detail",
+                                                                                    "id",
+                                                                                    "priority",
+                                                                                    "severity",
+                                                                                    "soarAction",
+                                                                                    "source",
+                                                                                    "sourceSystem",
+                                                                                    "status",
+                                                                                    "summary",
+                                                                                    "type",
+                                                                                    "updatedOn"
+                                                                                ],
+                                                                                "type": "object"
+                                                                            },
+                                                                            "type": "array"
+                                                                        },
+                                                                        "lastPageNumber": {
+                                                                            "type": "integer"
+                                                                        },
+                                                                        "pageNumber": {
+                                                                            "type": "integer"
+                                                                        },
+                                                                        "pageSize": {
+                                                                            "type": "integer"
+                                                                        },
+                                                                        "sorting": {
+                                                                            "items": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "type": "array"
+                                                                        },
+                                                                        "totalCount": {
+                                                                            "type": "integer"
+                                                                        }
+                                                                    },
+                                                                    "type": "object"
+                                                                }
+                                                            }
+                                                        },
+                                                        "Array_Loop": {
+                                                            "foreach": "@outputs('Parse_Fusion_Finding')?['body']?['items']",
+                                                            "actions": {
+                                                                "HTTP_-_Update_Fusion_Finding_Analyst_Notes": {
+                                                                    "type": "Http",
+                                                                    "inputs": {
+                                                                        "uri": "https://api.fusion.trustwave.com/v2/findings/@{item()?['id']}",
+                                                                        "method": "PATCH",
+                                                                        "headers": {
+                                                                            "Authorization": "Bearer @{parameters('Fusion-Token')}",
+                                                                            "accept": "application/json"
+                                                                        },
+                                                                        "body": {
+                                                                            "analystNotes": [
+                                                                                {
+                                                                                    "actor": "@{triggerBody()?['object']?['properties']?['owner']?['email']}",
+                                                                                    "text": "Isolation Action has been taken on @{body('Machines_-_Get_single_machine')?['computerDnsName']} by @{body('Actions_-_Isolate_machine')?['requestor']}",
+                                                                                    "timestamp": "@{utcNow()}"
+                                                                                }
+                                                                            ]
+                                                                        }
+                                                                    }
+                                                                },
+                                                                "HTTP_-_Get_Ticket_ID": {
+                                                                    "runAfter": {
+                                                                        "HTTP_-_Update_Fusion_Finding_Analyst_Notes": [
+                                                                            "Succeeded"
+                                                                        ]
+                                                                    },
+                                                                    "type": "Http",
+                                                                    "inputs": {
+                                                                        "uri": "https://api.fusion.trustwave.com/v2/tickets?findingIds=@{item()?['id']}",
+                                                                        "method": "GET",
+                                                                        "headers": {
+                                                                            "Authorization": "Bearer @{parameters('Fusion-Token')}",
+                                                                            "accept": "application/json"
+                                                                        }
+                                                                    }
+                                                                },
+                                                                "Parse_Fusion_Ticket": {
+                                                                    "runAfter": {
+                                                                        "HTTP_-_Get_Ticket_ID": [
+                                                                            "Succeeded"
+                                                                        ]
+                                                                    },
+                                                                    "type": "ParseJson",
+                                                                    "inputs": {
+                                                                        "content": "@body('HTTP_-_Get_Ticket_ID')",
+                                                                        "schema": {
+                                                                            "type": "object",
+                                                                            "properties": {
+                                                                                "items": {
+                                                                                    "type": "array",
+                                                                                    "items": {
+                                                                                        "type": "object",
+                                                                                        "properties": {
+                                                                                            "number": {
+                                                                                                "type": "string"
+                                                                                            },
+                                                                                            "priority": {
+                                                                                                "type": "string"
+                                                                                            },
+                                                                                            "type": {
+                                                                                                "type": "string"
+                                                                                            },
+                                                                                            "subject": {
+                                                                                                "type": "string"
+                                                                                            },
+                                                                                            "description": {
+                                                                                                "type": "string"
+                                                                                            },
+                                                                                            "customerId": {
+                                                                                                "type": "integer"
+                                                                                            },
+                                                                                            "category": {
+                                                                                                "type": "string"
+                                                                                            },
+                                                                                            "status": {
+                                                                                                "type": "string"
+                                                                                            },
+                                                                                            "subCategory": {
+                                                                                                "type": "string"
+                                                                                            },
+                                                                                            "investigation": {
+                                                                                                "type": "boolean"
+                                                                                            },
+                                                                                            "notes": {
+                                                                                                "type": "array"
+                                                                                            },
+                                                                                            "assetIds": {
+                                                                                                "type": "array"
+                                                                                            },
+                                                                                            "createdOn": {
+                                                                                                "type": "string"
+                                                                                            },
+                                                                                            "updatedOn": {
+                                                                                                "type": "string"
+                                                                                            },
+                                                                                            "urgency": {
+                                                                                                "type": "string"
+                                                                                            },
+                                                                                            "soarActions": {},
+                                                                                            "soarActionsTaken": {},
+                                                                                            "performedBy": {
+                                                                                                "type": "string"
+                                                                                            },
+                                                                                            "closeNotes": {
+                                                                                                "type": "string"
+                                                                                            },
+                                                                                            "impact": {
+                                                                                                "type": "string"
+                                                                                            },
+                                                                                            "createdBy": {
+                                                                                                "type": "string"
+                                                                                            },
+                                                                                            "findings": {
+                                                                                                "type": "array",
+                                                                                                "items": {
+                                                                                                    "type": "object",
+                                                                                                    "properties": {
+                                                                                                        "findingId": {
+                                                                                                            "type": "string"
+                                                                                                        },
+                                                                                                        "classificationCode": {
+                                                                                                            "type": "string"
+                                                                                                        },
+                                                                                                        "classification": {
+                                                                                                            "type": "string"
+                                                                                                        }
+                                                                                                    },
+                                                                                                    "required": [
+                                                                                                        "findingId",
+                                                                                                        "classificationCode",
+                                                                                                        "classification"
+                                                                                                    ]
+                                                                                                }
+                                                                                            },
+                                                                                            "updatedBy": {
+                                                                                                "type": "string"
+                                                                                            },
+                                                                                            "customerName": {
+                                                                                                "type": "string"
+                                                                                            },
+                                                                                            "survey": {
+                                                                                                "type": "boolean"
+                                                                                            },
+                                                                                            "changeDetails": {}
+                                                                                        },
+                                                                                        "required": [
+                                                                                            "number",
+                                                                                            "priority",
+                                                                                            "type",
+                                                                                            "subject",
+                                                                                            "description",
+                                                                                            "customerId",
+                                                                                            "category",
+                                                                                            "status",
+                                                                                            "subCategory",
+                                                                                            "investigation",
+                                                                                            "notes",
+                                                                                            "assetIds",
+                                                                                            "createdOn",
+                                                                                            "updatedOn",
+                                                                                            "urgency",
+                                                                                            "soarActions",
+                                                                                            "soarActionsTaken",
+                                                                                            "performedBy",
+                                                                                            "closeNotes",
+                                                                                            "impact",
+                                                                                            "createdBy",
+                                                                                            "findings",
+                                                                                            "updatedBy",
+                                                                                            "customerName",
+                                                                                            "survey",
+                                                                                            "changeDetails"
+                                                                                        ]
+                                                                                    }
+                                                                                },
+                                                                                "lastPageNumber": {
+                                                                                    "type": "integer"
+                                                                                },
+                                                                                "pageNumber": {
+                                                                                    "type": "integer"
+                                                                                },
+                                                                                "pageSize": {
+                                                                                    "type": "integer"
+                                                                                },
+                                                                                "sorting": {
+                                                                                    "type": "array",
+                                                                                    "items": {
+                                                                                        "type": "string"
+                                                                                    }
+                                                                                },
+                                                                                "totalCount": {
+                                                                                    "type": "integer"
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                },
+                                                                "ticket_loop": {
+                                                                    "foreach": "@outputs('Parse_Fusion_Ticket')?['body']?['items']",
+                                                                    "actions": {
+                                                                        "HTTP_-_Update_Fusion_Ticket": {
+                                                                            "type": "Http",
+                                                                            "inputs": {
+                                                                                "uri": "https://api.fusion.trustwave.com/v1/tickets/@{item()?['number']}/comments",
+                                                                                "method": "POST",
+                                                                                "headers": {
+                                                                                    "Authorization": "Bearer @{parameters('Fusion-Token')}",
+                                                                                    "accept": "application/json"
+                                                                                },
+                                                                                "body": {
+                                                                                    "comment": "Current Microsoft Defender Incident owner:@{triggerBody()?['object']?['properties']?['owner']}, Isolation Action has been requested on @{body('Machines_-_Get_single_machine')?['computerDnsName']} from the Microsoft Console."
+                                                                                }
+                                                                            }
+                                                                        },
+                                                                        "Add_comment_to_incident_if_fusion_ticket_update_fails": {
+                                                                            "runAfter": {
+                                                                                "HTTP_-_Update_Fusion_Ticket": [
+                                                                                    "Failed"
+                                                                                ]
+                                                                            },
+                                                                            "type": "ApiConnection",
+                                                                            "inputs": {
+                                                                                "host": {
+                                                                                    "connection": {
+                                                                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                                                                    }
+                                                                                },
+                                                                                "method": "post",
+                                                                                "body": {
+                                                                                    "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                                                    "message": "<p class=\"editor-paragraph\">Could not update the Fusion Ticket automatically.</p>"
+                                                                                },
+                                                                                "path": "/Incidents/Comment"
+                                                                            }
+                                                                        },
+                                                                        "Add_comment_to_incident_for_successful_fusion_update": {
+                                                                            "runAfter": {
+                                                                                "HTTP_-_Update_Fusion_Ticket": [
+                                                                                    "Succeeded"
+                                                                                ]
+                                                                            },
+                                                                            "type": "ApiConnection",
+                                                                            "inputs": {
+                                                                                "host": {
+                                                                                    "connection": {
+                                                                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                                                                    }
+                                                                                },
+                                                                                "method": "post",
+                                                                                "body": {
+                                                                                    "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                                                    "message": "<p class=\"editor-paragraph\">Trustwave was able to successfuly update the Fusion incident.</p>"
+                                                                                },
+                                                                                "path": "/Incidents/Comment"
+                                                                            }
+                                                                        }
+                                                                    },
+                                                                    "runAfter": {
+                                                                        "Parse_Fusion_Ticket": [
+                                                                            "Succeeded"
+                                                                        ]
+                                                                    },
+                                                                    "type": "Foreach"
+                                                                },
+                                                                "Add_comment_to_incident_if_fusion_finding_lookup_fails": {
+                                                                    "runAfter": {
+                                                                        "HTTP_-_Update_Fusion_Finding_Analyst_Notes": [
+                                                                            "Failed"
+                                                                        ]
+                                                                    },
+                                                                    "type": "ApiConnection",
+                                                                    "inputs": {
+                                                                        "host": {
+                                                                            "connection": {
+                                                                                "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                                                            }
+                                                                        },
+                                                                        "method": "post",
+                                                                        "body": {
+                                                                            "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                                            "message": "<p class=\"editor-paragraph\">Could not associate XDR Incident with Fusion Finding. Finding Notes have not been updated.  We also cannot update the Fusion Incident Ticket since the Finding was not found.</p>"
+                                                                        },
+                                                                        "path": "/Incidents/Comment"
+                                                                    }
+                                                                }
+                                                            },
+                                                            "runAfter": {
+                                                                "Parse_Fusion_Finding": [
+                                                                    "Succeeded"
+                                                                ]
+                                                            },
+                                                            "type": "Foreach"
+                                                        }
+                                                    },
+                                                    "runAfter": {
+                                                        "Add_comment_to_incident_for_authorized_group": [
+                                                            "Succeeded"
+                                                        ]
+                                                    },
+                                                    "type": "Scope"
+                                                },
+                                                "Add_comment_on_isolation_failure": {
+                                                    "runAfter": {
+                                                        "Actions_-_Isolate_machine": [
+                                                            "Failed"
+                                                        ]
+                                                    },
+                                                    "type": "ApiConnection",
+                                                    "inputs": {
+                                                        "host": {
+                                                            "connection": {
+                                                                "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                                            }
+                                                        },
+                                                        "method": "post",
+                                                        "body": {
+                                                            "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                            "message": "<p class=\"editor-paragraph\">@{body('Machines_-_Get_single_machine')?['computerDnsName']} was initiated to be isolated, however, ran into an issue.  Please take a look into this machine to see if it may already be offline, isolated, or may have a pending action in the action center.</p>"
+                                                        },
+                                                        "path": "/Incidents/Comment"
+                                                    }
+                                                }
+                                            },
+                                            "runAfter": {
+                                                "Machines_-_Get_single_machine": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "else": {
+                                                "actions": {
+                                                    "Add_comment_to_incident_for_device_not_authorized": {
+                                                        "type": "ApiConnection",
+                                                        "inputs": {
+                                                            "host": {
+                                                                "connection": {
+                                                                    "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                                                }
+                                                            },
+                                                            "method": "post",
+                                                            "body": {
+                                                                "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                                "message": "<p>@{body('Machines_-_Get_single_machine')?['computerDnsName']} was requested to be isolated by @{triggerBody()?['object']?['properties']?['owner']?['assignedTo']}, but is a part of a group Trustwave does not have permission to isolate on your behalf. Please review the incident and take the appropriate action. Please let us know if you have any questions on this action.</p><br><br>"
+                                                            },
+                                                            "path": "/Incidents/Comment"
+                                                        }
+                                                    },
+                                                    "Fusion_Finding_Update_for_Recommendation": {
+                                                        "actions": {
+                                                            "HTTP_-_Get_Fusion_Finding_based_on_Sentinel_ID_-_recommend": {
+                                                                "type": "Http",
+                                                                "inputs": {
+                                                                    "uri": "https://api.fusion.trustwave.com/v2/findings?detail=%22%2A@{triggerBody()?['object']?['properties']?['providerIncidentId']}%2A%22",
+                                                                    "method": "GET",
+                                                                    "headers": {
+                                                                        "Authorization": "Bearer @{parameters('Fusion-Token')}",
+                                                                        "accept": "application/json"
+                                                                    }
+                                                                }
+                                                            },
+                                                            "Parse_Fusion_Finding_-_recommend": {
+                                                                "runAfter": {
+                                                                    "HTTP_-_Get_Fusion_Finding_based_on_Sentinel_ID_-_recommend": [
+                                                                        "Succeeded"
+                                                                    ]
+                                                                },
+                                                                "type": "ParseJson",
+                                                                "inputs": {
+                                                                    "content": "@body('HTTP_-_Get_Fusion_Finding_based_on_Sentinel_ID_-_recommend')",
+                                                                    "schema": {
+                                                                        "properties": {
+                                                                            "items": {
+                                                                                "items": {
+                                                                                    "properties": {
+                                                                                        "analystNotes": {
+                                                                                            "type": "array"
+                                                                                        },
+                                                                                        "child": {
+                                                                                            "type": "boolean"
+                                                                                        },
+                                                                                        "classification": {
+                                                                                            "type": "string"
+                                                                                        },
+                                                                                        "createdOn": {
+                                                                                            "type": "string"
+                                                                                        },
+                                                                                        "customerId": {
+                                                                                            "type": "integer"
+                                                                                        },
+                                                                                        "customerName": {
+                                                                                            "type": "string"
+                                                                                        },
+                                                                                        "destination": {},
+                                                                                        "detail": {
+                                                                                            "type": "string"
+                                                                                        },
+                                                                                        "id": {
+                                                                                            "type": "string"
+                                                                                        },
+                                                                                        "priority": {
+                                                                                            "type": "integer"
+                                                                                        },
+                                                                                        "severity": {
+                                                                                            "type": "integer"
+                                                                                        },
+                                                                                        "soarAction": {},
+                                                                                        "source": {},
+                                                                                        "sourceSystem": {
+                                                                                            "type": "string"
+                                                                                        },
+                                                                                        "status": {},
+                                                                                        "summary": {
+                                                                                            "type": "string"
+                                                                                        },
+                                                                                        "type": {
+                                                                                            "type": "string"
+                                                                                        },
+                                                                                        "updatedOn": {
+                                                                                            "type": "string"
+                                                                                        }
+                                                                                    },
+                                                                                    "required": [
+                                                                                        "analystNotes",
+                                                                                        "child",
+                                                                                        "classification",
+                                                                                        "createdOn",
+                                                                                        "customerId",
+                                                                                        "customerName",
+                                                                                        "destination",
+                                                                                        "detail",
+                                                                                        "id",
+                                                                                        "priority",
+                                                                                        "severity",
+                                                                                        "soarAction",
+                                                                                        "source",
+                                                                                        "sourceSystem",
+                                                                                        "status",
+                                                                                        "summary",
+                                                                                        "type",
+                                                                                        "updatedOn"
+                                                                                    ],
+                                                                                    "type": "object"
+                                                                                },
+                                                                                "type": "array"
+                                                                            },
+                                                                            "lastPageNumber": {
+                                                                                "type": "integer"
+                                                                            },
+                                                                            "pageNumber": {
+                                                                                "type": "integer"
+                                                                            },
+                                                                            "pageSize": {
+                                                                                "type": "integer"
+                                                                            },
+                                                                            "sorting": {
+                                                                                "items": {
+                                                                                    "type": "string"
+                                                                                },
+                                                                                "type": "array"
+                                                                            },
+                                                                            "totalCount": {
+                                                                                "type": "integer"
+                                                                            }
+                                                                        },
+                                                                        "type": "object"
+                                                                    }
+                                                                }
+                                                            },
+                                                            "Array_Loop_for_recommend": {
+                                                                "foreach": "@outputs('Parse_Fusion_Finding_-_recommend')?['body']?['items']",
+                                                                "actions": {
+                                                                    "HTTP_-_Update_Fusion_Finding_Analyst_Notes_-_Recommend": {
+                                                                        "type": "Http",
+                                                                        "inputs": {
+                                                                            "uri": "https://api.fusion.trustwave.com/v2/findings/@{item()?['id']}",
+                                                                            "method": "PATCH",
+                                                                            "headers": {
+                                                                                "Authorization": "Bearer @{parameters('Fusion-Token')}",
+                                                                                "accept": "application/json"
+                                                                            },
+                                                                            "body": {
+                                                                                "analystNotes": [
+                                                                                    {
+                                                                                        "actor": "@{triggerBody()?['object']?['properties']?['owner']?['email']}",
+                                                                                        "text": "Isolation Action has been recommended on @{body('Machines_-_Get_single_machine')?['computerDnsName']}",
+                                                                                        "timestamp": "@{utcNow()}"
+                                                                                    }
+                                                                                ]
+                                                                            }
+                                                                        }
+                                                                    },
+                                                                    "HTTP_-_Get_Fusion_Ticket": {
+                                                                        "runAfter": {
+                                                                            "HTTP_-_Update_Fusion_Finding_Analyst_Notes_-_Recommend": [
+                                                                                "Succeeded"
+                                                                            ]
+                                                                        },
+                                                                        "type": "Http",
+                                                                        "inputs": {
+                                                                            "uri": "https://api.fusion.trustwave.com/v2/tickets?findingIds=@{item()?['id']}",
+                                                                            "method": "GET",
+                                                                            "headers": {
+                                                                                "Authorization": "Bearer @{parameters('Fusion-Token')}",
+                                                                                "accept": "application/json"
+                                                                            }
+                                                                        }
+                                                                    },
+                                                                    "Parse_Fusion_Ticket_-_recommend": {
+                                                                        "runAfter": {
+                                                                            "HTTP_-_Get_Fusion_Ticket": [
+                                                                                "Succeeded"
+                                                                            ]
+                                                                        },
+                                                                        "type": "ParseJson",
+                                                                        "inputs": {
+                                                                            "content": "@body('HTTP_-_Get_Fusion_Ticket')",
+                                                                            "schema": {
+                                                                                "type": "object",
+                                                                                "properties": {
+                                                                                    "query": {
+                                                                                        "type": "string"
+                                                                                    },
+                                                                                    "pageNumber": {
+                                                                                        "type": "integer"
+                                                                                    },
+                                                                                    "pageSize": {
+                                                                                        "type": "integer"
+                                                                                    },
+                                                                                    "lastPageNumber": {
+                                                                                        "type": "integer"
+                                                                                    },
+                                                                                    "items": {
+                                                                                        "type": "array",
+                                                                                        "items": {
+                                                                                            "type": "object",
+                                                                                            "properties": {
+                                                                                                "number": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "state": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "priority": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "type": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "channel": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "shortDescription": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "description": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "category": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "subCategory": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "productName": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "contactType": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "productId": {
+                                                                                                    "type": "integer"
+                                                                                                },
+                                                                                                "orgId": {
+                                                                                                    "type": "integer"
+                                                                                                },
+                                                                                                "assetIds": {
+                                                                                                    "type": "array",
+                                                                                                    "items": {
+                                                                                                        "type": "string"
+                                                                                                    }
+                                                                                                },
+                                                                                                "createdOn": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "updatedOn": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "urgency": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "findingIds": {
+                                                                                                    "type": "array",
+                                                                                                    "items": {
+                                                                                                        "type": "string"
+                                                                                                    }
+                                                                                                },
+                                                                                                "closeNotes": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "impact": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "comments": {
+                                                                                                    "type": "array",
+                                                                                                    "items": {
+                                                                                                        "type": "object",
+                                                                                                        "properties": {
+                                                                                                            "note": {
+                                                                                                                "type": "string"
+                                                                                                            },
+                                                                                                            "createdOn": {
+                                                                                                                "type": "string"
+                                                                                                            },
+                                                                                                            "createdByName": {
+                                                                                                                "type": "string"
+                                                                                                            },
+                                                                                                            "createdByUserName": {
+                                                                                                                "type": "string"
+                                                                                                            }
+                                                                                                        },
+                                                                                                        "required": [
+                                                                                                            "note",
+                                                                                                            "createdOn",
+                                                                                                            "createdByName",
+                                                                                                            "createdByUserName"
+                                                                                                        ]
+                                                                                                    }
+                                                                                                },
+                                                                                                "contactId": {
+                                                                                                    "type": "integer"
+                                                                                                },
+                                                                                                "deviceId": {
+                                                                                                    "type": "integer"
+                                                                                                },
+                                                                                                "assignmentGroupName": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "closedByName": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "closedByUserId": {
+                                                                                                    "type": "integer"
+                                                                                                },
+                                                                                                "closedByUsername": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "closedOn": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "contactName": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "contactUsername": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "createdByName": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "createdByUsername": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "findingInfos": {
+                                                                                                    "type": "array",
+                                                                                                    "items": {
+                                                                                                        "type": "object",
+                                                                                                        "properties": {
+                                                                                                            "name": {
+                                                                                                                "type": "string"
+                                                                                                            },
+                                                                                                            "priority": {
+                                                                                                                "type": "string"
+                                                                                                            },
+                                                                                                            "id": {
+                                                                                                                "type": "string"
+                                                                                                            },
+                                                                                                            "type": {
+                                                                                                                "type": "string"
+                                                                                                            },
+                                                                                                            "assetCount": {
+                                                                                                                "type": "integer"
+                                                                                                            },
+                                                                                                            "detail": {
+                                                                                                                "type": "string"
+                                                                                                            },
+                                                                                                            "soarActions": {
+                                                                                                                "type": "array",
+                                                                                                                "items": {
+                                                                                                                    "type": "object",
+                                                                                                                    "properties": {
+                                                                                                                        "soarActionType": {
+                                                                                                                            "type": "string"
+                                                                                                                        },
+                                                                                                                        "options": {
+                                                                                                                            "type": "array",
+                                                                                                                            "items": {
+                                                                                                                                "type": "object",
+                                                                                                                                "properties": {
+                                                                                                                                    "entityList": {
+                                                                                                                                        "type": "array",
+                                                                                                                                        "items": {
+                                                                                                                                            "type": "object",
+                                                                                                                                            "properties": {
+                                                                                                                                                "key": {
+                                                                                                                                                    "type": "string"
+                                                                                                                                                },
+                                                                                                                                                "value": {
+                                                                                                                                                    "type": "string"
+                                                                                                                                                },
+                                                                                                                                                "label": {
+                                                                                                                                                    "type": "string"
+                                                                                                                                                }
+                                                                                                                                            },
+                                                                                                                                            "required": [
+                                                                                                                                                "key",
+                                                                                                                                                "value",
+                                                                                                                                                "label"
+                                                                                                                                            ]
+                                                                                                                                        }
+                                                                                                                                    }
+                                                                                                                                },
+                                                                                                                                "required": [
+                                                                                                                                    "entityList"
+                                                                                                                                ]
+                                                                                                                            }
+                                                                                                                        }
+                                                                                                                    },
+                                                                                                                    "required": [
+                                                                                                                        "soarActionType",
+                                                                                                                        "options"
+                                                                                                                    ]
+                                                                                                                }
+                                                                                                            },
+                                                                                                            "jobId": {
+                                                                                                                "type": "string"
+                                                                                                            },
+                                                                                                            "sourceSystem": {
+                                                                                                                "type": "string"
+                                                                                                            },
+                                                                                                            "soarResponseActions": {
+                                                                                                                "type": "array",
+                                                                                                                "items": {
+                                                                                                                    "type": "string"
+                                                                                                                }
+                                                                                                            },
+                                                                                                            "soarResponseActionTaken": {
+                                                                                                                "type": "string"
+                                                                                                            },
+                                                                                                            "itags": {
+                                                                                                                "type": "array",
+                                                                                                                "items": {
+                                                                                                                    "type": "string"
+                                                                                                                }
+                                                                                                            }
+                                                                                                        },
+                                                                                                        "required": [
+                                                                                                            "name",
+                                                                                                            "priority",
+                                                                                                            "id",
+                                                                                                            "type",
+                                                                                                            "assetCount",
+                                                                                                            "detail",
+                                                                                                            "soarActions",
+                                                                                                            "jobId",
+                                                                                                            "sourceSystem",
+                                                                                                            "soarResponseActions",
+                                                                                                            "soarResponseActionTaken",
+                                                                                                            "itags"
+                                                                                                        ]
+                                                                                                    }
+                                                                                                },
+                                                                                                "mid": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "openedOn": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "relatedTicket": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "resolutionCode": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "resolutionNotes": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "securityIncident": {
+                                                                                                    "type": "boolean"
+                                                                                                },
+                                                                                                "assetInfos": {
+                                                                                                    "type": "array",
+                                                                                                    "items": {
+                                                                                                        "type": "object",
+                                                                                                        "properties": {
+                                                                                                            "name": {
+                                                                                                                "type": "string"
+                                                                                                            },
+                                                                                                            "id": {
+                                                                                                                "type": "string"
+                                                                                                            },
+                                                                                                            "deviceId": {
+                                                                                                                "type": "integer"
+                                                                                                            }
+                                                                                                        },
+                                                                                                        "required": [
+                                                                                                            "name",
+                                                                                                            "id",
+                                                                                                            "deviceId"
+                                                                                                        ]
+                                                                                                    }
+                                                                                                },
+                                                                                                "updatedByName": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "updatedByUsername": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "orgName": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "numberUri": {
+                                                                                                    "type": "string"
+                                                                                                }
+                                                                                            },
+                                                                                            "required": [
+                                                                                                "number",
+                                                                                                "state",
+                                                                                                "priority",
+                                                                                                "type",
+                                                                                                "channel",
+                                                                                                "shortDescription",
+                                                                                                "description",
+                                                                                                "category",
+                                                                                                "subCategory",
+                                                                                                "productName",
+                                                                                                "contactType",
+                                                                                                "productId",
+                                                                                                "orgId",
+                                                                                                "assetIds",
+                                                                                                "createdOn",
+                                                                                                "updatedOn",
+                                                                                                "urgency",
+                                                                                                "findingIds",
+                                                                                                "closeNotes",
+                                                                                                "impact",
+                                                                                                "comments",
+                                                                                                "contactId",
+                                                                                                "deviceId",
+                                                                                                "assignmentGroupName",
+                                                                                                "closedByName",
+                                                                                                "closedByUserId",
+                                                                                                "closedByUsername",
+                                                                                                "closedOn",
+                                                                                                "contactName",
+                                                                                                "contactUsername",
+                                                                                                "createdByName",
+                                                                                                "createdByUsername",
+                                                                                                "findingInfos",
+                                                                                                "mid",
+                                                                                                "openedOn",
+                                                                                                "relatedTicket",
+                                                                                                "resolutionCode",
+                                                                                                "resolutionNotes",
+                                                                                                "securityIncident",
+                                                                                                "assetInfos",
+                                                                                                "updatedByName",
+                                                                                                "updatedByUsername",
+                                                                                                "orgName",
+                                                                                                "numberUri"
+                                                                                            ]
+                                                                                        }
+                                                                                    },
+                                                                                    "totalCount": {
+                                                                                        "type": "integer"
+                                                                                    },
+                                                                                    "sorting": {
+                                                                                        "type": "array",
+                                                                                        "items": {
+                                                                                            "type": "string"
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    },
+                                                                    "Ticket_loop_-_recommend": {
+                                                                        "foreach": "@outputs('Parse_Fusion_Ticket_-_recommend')?['body']?['items']",
+                                                                        "actions": {
+                                                                            "HTTP_-_Update_Fusion_Ticket_-_Recommend": {
+                                                                                "type": "Http",
+                                                                                "inputs": {
+                                                                                    "uri": "https://api.fusion.trustwave.com/v1/tickets/@{item()?['number']}/comments",
+                                                                                    "method": "GET",
+                                                                                    "headers": {
+                                                                                        "Authorization": "Bearer @{parameters('Fusion-Token')}",
+                                                                                        "accept": "application/json"
+                                                                                    },
+                                                                                    "body": {
+                                                                                        "comment": "actor:@{triggerBody()?['object']?['properties']?['owner']}, Isolation Action has been taken on @{body('Machines_-_Get_single_machine')}"
+                                                                                    }
+                                                                                }
+                                                                            },
+                                                                            "Add_comment_to_incident_for_recommended_action": {
+                                                                                "runAfter": {
+                                                                                    "HTTP_-_Update_Fusion_Ticket_-_Recommend": [
+                                                                                        "Failed"
+                                                                                    ]
+                                                                                },
+                                                                                "type": "ApiConnection",
+                                                                                "inputs": {
+                                                                                    "host": {
+                                                                                        "connection": {
+                                                                                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                                                                        }
+                                                                                    },
+                                                                                    "method": "post",
+                                                                                    "body": {
+                                                                                        "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                                                        "message": "<p class=\"editor-paragraph\">Could not associate XDR Incident with Fusion Finding.  Analyst Notes have not been updated.</p>"
+                                                                                    },
+                                                                                    "path": "/Incidents/Comment"
+                                                                                }
+                                                                            },
+                                                                            "Add_comment_to_incident_for_successful_fusion_update_-_recommend": {
+                                                                                "runAfter": {
+                                                                                    "HTTP_-_Update_Fusion_Ticket_-_Recommend": [
+                                                                                        "Succeeded"
+                                                                                    ]
+                                                                                },
+                                                                                "type": "ApiConnection",
+                                                                                "inputs": {
+                                                                                    "host": {
+                                                                                        "connection": {
+                                                                                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                                                                        }
+                                                                                    },
+                                                                                    "method": "post",
+                                                                                    "body": {
+                                                                                        "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                                                        "message": "<p class=\"editor-paragraph\">Trustwave was able to successfuly update the Fusion incident.</p>"
+                                                                                    },
+                                                                                    "path": "/Incidents/Comment"
+                                                                                }
+                                                                            }
+                                                                        },
+                                                                        "runAfter": {
+                                                                            "Parse_Fusion_Ticket_-_recommend": [
+                                                                                "Succeeded"
+                                                                            ]
+                                                                        },
+                                                                        "type": "Foreach"
+                                                                    },
+                                                                    "Add_comment_to_incident_if_fusion_finding_lookup_fails_-_recommend": {
+                                                                        "runAfter": {
+                                                                            "HTTP_-_Update_Fusion_Finding_Analyst_Notes_-_Recommend": [
+                                                                                "Failed"
+                                                                            ]
+                                                                        },
+                                                                        "type": "ApiConnection",
+                                                                        "inputs": {
+                                                                            "host": {
+                                                                                "connection": {
+                                                                                    "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                                                                }
+                                                                            },
+                                                                            "method": "post",
+                                                                            "body": {
+                                                                                "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                                                "message": "<p class=\"editor-paragraph\">Could not associate XDR Incident with Fusion Finding. Finding Notes have not been updated.  We also cannot update the Fusion Incident Ticket since the Finding was not found.</p>"
+                                                                            },
+                                                                            "path": "/Incidents/Comment"
+                                                                        }
+                                                                    }
+                                                                },
+                                                                "runAfter": {
+                                                                    "Parse_Fusion_Finding_-_recommend": [
+                                                                        "Succeeded"
+                                                                    ]
+                                                                },
+                                                                "type": "Foreach"
+                                                            }
+                                                        },
+                                                        "runAfter": {
+                                                            "Add_comment_to_incident_for_device_not_authorized": [
+                                                                "Succeeded"
+                                                            ]
+                                                        },
+                                                        "type": "Scope"
+                                                    }
+                                                }
+                                            },
+                                            "expression": {
+                                                "and": [
+                                                    {
+                                                        "contains": [
+                                                            "@body('Machines_-_Get_single_machine')?['machineTags']",
+                                                            "tw-authorized"
+                                                        ]
+                                                    },
+                                                    {
+                                                        "equals": [
+                                                            "",
+                                                            ""
+                                                        ]
+                                                    }
+                                                ]
+                                            },
+                                            "type": "If"
+                                        }
+                                    },
+                                    "else": {
+                                        "actions": {
+                                            "Add_comment_to_incident_when_no_ID_found": {
+                                                "type": "ApiConnection",
+                                                "inputs": {
+                                                    "host": {
+                                                        "connection": {
+                                                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                                        }
+                                                    },
+                                                    "method": "post",
+                                                    "body": {
+                                                        "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                        "message": "<p>@{items('For_each')?['HostName']} was requested to be isolated by @{triggerBody()?['object']?['properties']?['owner']?['assignedTo']}, but does not have an MDEDeviceID in the Entities list. &nbsp;It cannot be isolated by this runbook.  Please review the host.&nbsp;</p>"
+                                                    },
+                                                    "path": "/Incidents/Comment"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "expression": {
+                                        "and": [
+                                            {
+                                                "not": {
+                                                    "equals": [
+                                                        "@items('For_each')?['additionalData']?['MdatpDeviceId']",
+                                                        "@null"
+                                                    ]
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    "type": "If"
+                                }
+                            },
+                            "runAfter": {
+                                "Entities_-_Get_Hosts": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Foreach"
+                        },
+                        "Initialize_fusion_ticket_variable": {
+                            "runAfter": {},
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "FusionTicket",
+                                        "type": "string"
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "azuresentinel": {
+                                "id": "/subscriptions/69e238c0-023f-455f-8432-013a258cf548/providers/Microsoft.Web/locations/eastus/managedApis/azuresentinel",
+                                "connectionId": "[parameters('connections_azuresentinel_6_externalid')]",
+                                "connectionName": "azuresentinel-6"
+                            },
+                            "wdatp": {
+                                "id": "/subscriptions/69e238c0-023f-455f-8432-013a258cf548/providers/Microsoft.Web/locations/eastus/managedApis/wdatp",
+                                "connectionId": "[parameters('connections_wdatp_externalid')]",
+                                "connectionName": "wdatp"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}
