@@ -6,44 +6,76 @@
             "defaultValue": "TW-Disable-EntraUser",
             "type": "String"
         },
-        "connections_azuresentinel_6_externalid": {
-            "defaultValue": "/subscriptions/c5689f2c-8d0b-42f6-8d80-0f9b83c06d0a/resourceGroups/sentinel/providers/Microsoft.Web/connections/azuresentinel-6",
-            "type": "String"
+        "logicAppLocation": {
+            "type": "String",
+            "defaultValue": "[resourceGroup().location]"
         },
-        "connections_azuresentinel_8_externalid": {
-            "defaultValue": "/subscriptions/c5689f2c-8d0b-42f6-8d80-0f9b83c06d0a/resourceGroups/sentinel/providers/Microsoft.Web/connections/azuresentinel-8",
-            "type": "String"
+        "sentinelConnectionName": {
+            "type": "String",
+            "defaultValue": "[concat(parameters('workflows_TW_Disable_EntraUser_name'), '-azuresentinel-connection')]"
         },
-        "connections_azuread_4_externalid": {
-            "defaultValue": "/subscriptions/c5689f2c-8d0b-42f6-8d80-0f9b83c06d0a/resourceGroups/sentinel/providers/Microsoft.Web/connections/azuread-4",
-            "type": "String"
+        "azureADConnectionName": {
+            "type": "String",
+            "defaultValue": "[concat(parameters('workflows_TW_Disable_EntraUser_name'), '-azuread-connection')]"
         },
-        "connections_azuresentinel_Isolate_MDEMachine_externalid": {
-            "defaultValue": "/subscriptions/c5689f2c-8d0b-42f6-8d80-0f9b83c06d0a/resourceGroups/sentinel/providers/Microsoft.Web/connections/azuresentinel-Isolate-MDEMachine",
-            "type": "String"
-        },
-        "connections_azuread_3_externalid": {
-            "defaultValue": "/subscriptions/c5689f2c-8d0b-42f6-8d80-0f9b83c06d0a/resourceGroups/sentinel/providers/Microsoft.Web/connections/azuread-3",
-            "type": "String"
+        "Fusion-Token": {
+             "type": "securestring"
         }
     },
-    "variables": {},
+    "variables": {
+        "azureSentinelApiId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', parameters('logicAppLocation'), '/managedApis/azuresentinel')]",
+        "azureADApiId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', parameters('logicAppLocation'), '/managedApis/azuread')]"
+    },
     "resources": [
+        {
+            "type": "Microsoft.Web/connections",
+            "apiVersion": "2016-06-01",
+            "name": "[parameters('sentinelConnectionName')]",
+            "location": "[parameters('logicAppLocation')]",
+            "kind": "V1",
+            "properties": {
+                "displayName": "[parameters('sentinelConnectionName')]",
+                "api": {
+                    "id": "[variables('azureSentinelApiId')]"
+                },
+                "parameterValueSet": {
+                    "name": "managedIdentityAuth",
+                    "values": {}
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Web/connections",
+            "apiVersion": "2016-06-01",
+            "name": "[parameters('azureADConnectionName')]",
+            "location": "[parameters('logicAppLocation')]",
+            "kind": "V1",
+            "properties": {
+                "displayName": "[parameters('azureADConnectionName')]",
+                "api": {
+                    "id": "[variables('azureADApiId')]"
+                }
+            }
+        },
         {
             "type": "Microsoft.Logic/workflows",
             "apiVersion": "2017-07-01",
             "name": "[parameters('workflows_TW_Disable_EntraUser_name')]",
-            "location": "eastus",
+            "location": "[parameters('logicAppLocation')]",
             "tags": {
                 "LogicAppsCategory": "security",
-                "hidden-SentinelTemplateName": "Isolate-MDEMachine",
-                "hidden-SentinelTemplateVersion": "1.0",
+                "hidden-SentinelTemplateName": "TW-Disable-EntraUser",
+                "hidden-SentinelTemplateVersion": "1.1",
                 "team": "PEC",
                 "owner": "mssulivan"
             },
             "identity": {
                 "type": "SystemAssigned"
             },
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/connections', parameters('sentinelConnectionName'))]",
+                "[resourceId('Microsoft.Web/connections', parameters('azureADConnectionName'))]"
+            ],
             "properties": {
                 "state": "Enabled",
                 "definition": {
@@ -53,7 +85,11 @@
                         "$connections": {
                             "defaultValue": {},
                             "type": "Object"
-                        }
+                        },
+                         "Fusion-Token": {
+                            "type": "securestring",
+                            "defaultValue": "[parameters('Fusion-Token')]"
+                         }
                     },
                     "triggers": {
                         "Microsoft_Sentinel_incident": {
@@ -61,7 +97,7 @@
                             "inputs": {
                                 "host": {
                                     "connection": {
-                                        "name": "@parameters('$connections')['azuresentinel-3']['connectionId']"
+                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
                                     }
                                 },
                                 "body": {
@@ -72,1015 +108,7 @@
                         }
                     },
                     "actions": {
-                        "For_each": {
-                            "foreach": "@body('Entities_-_Get_Accounts')?['Accounts']",
-                            "actions": {
-                                "Check_for_User_ID": {
-                                    "actions": {
-                                        "Authorization_Permitted": {
-                                            "actions": {
-                                                "Add_comment_to_incident_for_authorized_group": {
-                                                    "runAfter": {
-                                                        "Update_user": [
-                                                            "Succeeded"
-                                                        ]
-                                                    },
-                                                    "type": "ApiConnection",
-                                                    "inputs": {
-                                                        "host": {
-                                                            "connection": {
-                                                                "name": "@parameters('$connections')['azuresentinel-4']['connectionId']"
-                                                            }
-                                                        },
-                                                        "method": "post",
-                                                        "body": {
-                                                            "incidentArmId": "@triggerBody()?['object']?['id']",
-                                                            "message": "<p class=\"editor-paragraph\">@{body('Get_user')?['displayName']} has been disabled.</p>"
-                                                        },
-                                                        "path": "/Incidents/Comment"
-                                                    }
-                                                },
-                                                "Update_user": {
-                                                    "type": "ApiConnection",
-                                                    "inputs": {
-                                                        "host": {
-                                                            "connection": {
-                                                                "name": "@parameters('$connections')['azuread-2']['connectionId']"
-                                                            }
-                                                        },
-                                                        "method": "patch",
-                                                        "body": {
-                                                            "accountEnabled": false
-                                                        },
-                                                        "path": "/v1.0/users/@{encodeURIComponent(body('Get_user')?['id'])}"
-                                                    }
-                                                },
-                                                "Fusion_Finding_Update": {
-                                                    "actions": {
-                                                        "HTTP_-_Get_Fusion_Finding_based_on_Sentinel_ID": {
-                                                            "type": "Http",
-                                                            "inputs": {
-                                                                "uri": "https://api.fusion.trustwave.com/v2/findings?detail=%22%2A@{triggerBody()?['object']?['properties']?['providerIncidentId']}%2A%22",
-                                                                "method": "GET",
-                                                                "headers": {
-                                                                    "Authorization": "Bearer @{parameters('Fusion-Token')}",
-                                                                    "accept": "application/json"
-                                                                }
-                                                            }
-                                                        },
-                                                        "Parse_Fusion_Finding": {
-                                                            "runAfter": {
-                                                                "HTTP_-_Get_Fusion_Finding_based_on_Sentinel_ID": [
-                                                                    "Succeeded"
-                                                                ]
-                                                            },
-                                                            "type": "ParseJson",
-                                                            "inputs": {
-                                                                "content": "@body('HTTP_-_Get_Fusion_Finding_based_on_Sentinel_ID')",
-                                                                "schema": {
-                                                                    "properties": {
-                                                                        "items": {
-                                                                            "items": {
-                                                                                "properties": {
-                                                                                    "analystNotes": {
-                                                                                        "type": "array"
-                                                                                    },
-                                                                                    "child": {
-                                                                                        "type": "boolean"
-                                                                                    },
-                                                                                    "classification": {
-                                                                                        "type": "string"
-                                                                                    },
-                                                                                    "createdOn": {
-                                                                                        "type": "string"
-                                                                                    },
-                                                                                    "customerId": {
-                                                                                        "type": "integer"
-                                                                                    },
-                                                                                    "customerName": {
-                                                                                        "type": "string"
-                                                                                    },
-                                                                                    "destination": {},
-                                                                                    "detail": {
-                                                                                        "type": "string"
-                                                                                    },
-                                                                                    "id": {
-                                                                                        "type": "string"
-                                                                                    },
-                                                                                    "priority": {
-                                                                                        "type": "integer"
-                                                                                    },
-                                                                                    "severity": {
-                                                                                        "type": "integer"
-                                                                                    },
-                                                                                    "soarAction": {},
-                                                                                    "source": {},
-                                                                                    "sourceSystem": {
-                                                                                        "type": "string"
-                                                                                    },
-                                                                                    "status": {},
-                                                                                    "summary": {
-                                                                                        "type": "string"
-                                                                                    },
-                                                                                    "type": {
-                                                                                        "type": "string"
-                                                                                    },
-                                                                                    "updatedOn": {
-                                                                                        "type": "string"
-                                                                                    }
-                                                                                },
-                                                                                "required": [
-                                                                                    "analystNotes",
-                                                                                    "child",
-                                                                                    "classification",
-                                                                                    "createdOn",
-                                                                                    "customerId",
-                                                                                    "customerName",
-                                                                                    "destination",
-                                                                                    "detail",
-                                                                                    "id",
-                                                                                    "priority",
-                                                                                    "severity",
-                                                                                    "soarAction",
-                                                                                    "source",
-                                                                                    "sourceSystem",
-                                                                                    "status",
-                                                                                    "summary",
-                                                                                    "type",
-                                                                                    "updatedOn"
-                                                                                ],
-                                                                                "type": "object"
-                                                                            },
-                                                                            "type": "array"
-                                                                        },
-                                                                        "lastPageNumber": {
-                                                                            "type": "integer"
-                                                                        },
-                                                                        "pageNumber": {
-                                                                            "type": "integer"
-                                                                        },
-                                                                        "pageSize": {
-                                                                            "type": "integer"
-                                                                        },
-                                                                        "sorting": {
-                                                                            "items": {
-                                                                                "type": "string"
-                                                                            },
-                                                                            "type": "array"
-                                                                        },
-                                                                        "totalCount": {
-                                                                            "type": "integer"
-                                                                        }
-                                                                    },
-                                                                    "type": "object"
-                                                                }
-                                                            }
-                                                        },
-                                                        "Array_Loop": {
-                                                            "foreach": "@outputs('Parse_Fusion_Finding')?['body']?['items']",
-                                                            "actions": {
-                                                                "HTTP_-_Update_Fusion_Finding_Analyst_Notes": {
-                                                                    "type": "Http",
-                                                                    "inputs": {
-                                                                        "uri": "https://api.fusion.trustwave.com/v2/findings/@{item()?['id']}",
-                                                                        "method": "PATCH",
-                                                                        "headers": {
-                                                                            "Authorization": "Bearer @{parameters('Fusion-Token')}",
-                                                                            "accept": "application/json"
-                                                                        },
-                                                                        "body": {
-                                                                            "analystNotes": [
-                                                                                {
-                                                                                    "actor": "@{triggerBody()?['object']?['properties']?['owner']?['email']}",
-                                                                                    "text": "Disabled User action has been taken on @{body('Get_user')?['displayName']} by @{triggerBody()?['object']?['properties']?['owner']}",
-                                                                                    "timestamp": "@{utcNow()}"
-                                                                                }
-                                                                            ]
-                                                                        }
-                                                                    }
-                                                                },
-                                                                "HTTP_-_Get_Ticket_ID": {
-                                                                    "runAfter": {
-                                                                        "HTTP_-_Update_Fusion_Finding_Analyst_Notes": [
-                                                                            "Succeeded"
-                                                                        ]
-                                                                    },
-                                                                    "type": "Http",
-                                                                    "inputs": {
-                                                                        "uri": "https://api.fusion.trustwave.com/v2/tickets?findingIds=@{item()?['id']}",
-                                                                        "method": "GET",
-                                                                        "headers": {
-                                                                            "Authorization": "Bearer @{parameters('Fusion-Token')}",
-                                                                            "accept": "application/json"
-                                                                        }
-                                                                    }
-                                                                },
-                                                                "Add_comment_to_incident_if_fusion_finding_lookup_fails-copy": {
-                                                                    "runAfter": {
-                                                                        "HTTP_-_Update_Fusion_Finding_Analyst_Notes": [
-                                                                            "Failed"
-                                                                        ]
-                                                                    },
-                                                                    "type": "ApiConnection",
-                                                                    "inputs": {
-                                                                        "host": {
-                                                                            "connection": {
-                                                                                "name": "@parameters('$connections')['azuresentinel']['connectionId']"
-                                                                            }
-                                                                        },
-                                                                        "method": "post",
-                                                                        "body": {
-                                                                            "incidentArmId": "@triggerBody()?['object']?['id']",
-                                                                            "message": "<p class=\"editor-paragraph\">Could not associate XDR Incident with Fusion Finding. Finding Notes have not been updated.  We also cannot update the Fusion Incident Ticket since the Finding was not found.</p>"
-                                                                        },
-                                                                        "path": "/Incidents/Comment"
-                                                                    }
-                                                                },
-                                                                "Parse_Fusion_Ticket": {
-                                                                    "runAfter": {
-                                                                        "HTTP_-_Get_Ticket_ID": [
-                                                                            "Succeeded"
-                                                                        ]
-                                                                    },
-                                                                    "type": "ParseJson",
-                                                                    "inputs": {
-                                                                        "content": "@body('HTTP_-_Get_Ticket_ID')",
-                                                                        "schema": {
-                                                                            "type": "object",
-                                                                            "properties": {
-                                                                                "items": {
-                                                                                    "type": "array",
-                                                                                    "items": {
-                                                                                        "type": "object",
-                                                                                        "properties": {
-                                                                                            "number": {
-                                                                                                "type": "string"
-                                                                                            },
-                                                                                            "priority": {
-                                                                                                "type": "string"
-                                                                                            },
-                                                                                            "type": {
-                                                                                                "type": "string"
-                                                                                            },
-                                                                                            "subject": {
-                                                                                                "type": "string"
-                                                                                            },
-                                                                                            "description": {
-                                                                                                "type": "string"
-                                                                                            },
-                                                                                            "customerId": {
-                                                                                                "type": "integer"
-                                                                                            },
-                                                                                            "category": {
-                                                                                                "type": "string"
-                                                                                            },
-                                                                                            "status": {
-                                                                                                "type": "string"
-                                                                                            },
-                                                                                            "subCategory": {
-                                                                                                "type": "string"
-                                                                                            },
-                                                                                            "investigation": {
-                                                                                                "type": "boolean"
-                                                                                            },
-                                                                                            "notes": {
-                                                                                                "type": "array"
-                                                                                            },
-                                                                                            "assetIds": {
-                                                                                                "type": "array"
-                                                                                            },
-                                                                                            "createdOn": {
-                                                                                                "type": "string"
-                                                                                            },
-                                                                                            "updatedOn": {
-                                                                                                "type": "string"
-                                                                                            },
-                                                                                            "urgency": {
-                                                                                                "type": "string"
-                                                                                            },
-                                                                                            "soarActions": {},
-                                                                                            "soarActionsTaken": {},
-                                                                                            "performedBy": {
-                                                                                                "type": "string"
-                                                                                            },
-                                                                                            "closeNotes": {
-                                                                                                "type": "string"
-                                                                                            },
-                                                                                            "impact": {
-                                                                                                "type": "string"
-                                                                                            },
-                                                                                            "createdBy": {
-                                                                                                "type": "string"
-                                                                                            },
-                                                                                            "findings": {
-                                                                                                "type": "array",
-                                                                                                "items": {
-                                                                                                    "type": "object",
-                                                                                                    "properties": {
-                                                                                                        "findingId": {
-                                                                                                            "type": "string"
-                                                                                                        },
-                                                                                                        "classificationCode": {
-                                                                                                            "type": "string"
-                                                                                                        },
-                                                                                                        "classification": {
-                                                                                                            "type": "string"
-                                                                                                        }
-                                                                                                    },
-                                                                                                    "required": [
-                                                                                                        "findingId",
-                                                                                                        "classificationCode",
-                                                                                                        "classification"
-                                                                                                    ]
-                                                                                                }
-                                                                                            },
-                                                                                            "updatedBy": {
-                                                                                                "type": "string"
-                                                                                            },
-                                                                                            "customerName": {
-                                                                                                "type": "string"
-                                                                                            },
-                                                                                            "survey": {
-                                                                                                "type": "boolean"
-                                                                                            },
-                                                                                            "changeDetails": {}
-                                                                                        },
-                                                                                        "required": [
-                                                                                            "number",
-                                                                                            "priority",
-                                                                                            "type",
-                                                                                            "subject",
-                                                                                            "description",
-                                                                                            "customerId",
-                                                                                            "category",
-                                                                                            "status",
-                                                                                            "subCategory",
-                                                                                            "investigation",
-                                                                                            "notes",
-                                                                                            "assetIds",
-                                                                                            "createdOn",
-                                                                                            "updatedOn",
-                                                                                            "urgency",
-                                                                                            "soarActions",
-                                                                                            "soarActionsTaken",
-                                                                                            "performedBy",
-                                                                                            "closeNotes",
-                                                                                            "impact",
-                                                                                            "createdBy",
-                                                                                            "findings",
-                                                                                            "updatedBy",
-                                                                                            "customerName",
-                                                                                            "survey",
-                                                                                            "changeDetails"
-                                                                                        ]
-                                                                                    }
-                                                                                },
-                                                                                "lastPageNumber": {
-                                                                                    "type": "integer"
-                                                                                },
-                                                                                "pageNumber": {
-                                                                                    "type": "integer"
-                                                                                },
-                                                                                "pageSize": {
-                                                                                    "type": "integer"
-                                                                                },
-                                                                                "sorting": {
-                                                                                    "type": "array",
-                                                                                    "items": {
-                                                                                        "type": "string"
-                                                                                    }
-                                                                                },
-                                                                                "totalCount": {
-                                                                                    "type": "integer"
-                                                                                }
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                },
-                                                                "ticket_loop": {
-                                                                    "foreach": "@body('Parse_Fusion_Ticket')?['items']",
-                                                                    "actions": {
-                                                                        "HTTP_-_Update_Fusion_Ticket": {
-                                                                            "type": "Http",
-                                                                            "inputs": {
-                                                                                "uri": "https://api.fusion.trustwave.com/v1/tickets/@{item()?['number']}/comments",
-                                                                                "method": "POST",
-                                                                                "headers": {
-                                                                                    "Authorization": "Bearer @{parameters('Fusion-Token')}",
-                                                                                    "accept": "application/json"
-                                                                                },
-                                                                                "body": {
-                                                                                    "comment": "Current Microsoft Defender Incident owner:@{triggerBody()?['object']?['properties']?['owner']?['email']}, Disable User Action has been performed on @{body('Get_user')?['userPrincipalName']} from the Microsoft Console."
-                                                                                }
-                                                                            }
-                                                                        },
-                                                                        "Add_comment_to_incident_if_fusion_ticket_update_fails": {
-                                                                            "runAfter": {
-                                                                                "HTTP_-_Update_Fusion_Ticket": [
-                                                                                    "Failed"
-                                                                                ]
-                                                                            },
-                                                                            "type": "ApiConnection",
-                                                                            "inputs": {
-                                                                                "host": {
-                                                                                    "connection": {
-                                                                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
-                                                                                    }
-                                                                                },
-                                                                                "method": "post",
-                                                                                "body": {
-                                                                                    "incidentArmId": "@{triggerBody()?['object']?['id']}",
-                                                                                    "message": "<p class=\"editor-paragraph\">Could not update the Fusion Ticket automatically.</p>"
-                                                                                },
-                                                                                "path": "/Incidents/Comment"
-                                                                            }
-                                                                        },
-                                                                        "Add_comment_to_incident_for_successful_fusion_update": {
-                                                                            "runAfter": {
-                                                                                "HTTP_-_Update_Fusion_Ticket": [
-                                                                                    "Succeeded"
-                                                                                ]
-                                                                            },
-                                                                            "type": "ApiConnection",
-                                                                            "inputs": {
-                                                                                "host": {
-                                                                                    "connection": {
-                                                                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
-                                                                                    }
-                                                                                },
-                                                                                "method": "post",
-                                                                                "body": {
-                                                                                    "incidentArmId": "@{triggerBody()?['object']?['id']}",
-                                                                                    "message": "<p class=\"editor-paragraph\">Trustwave was able to successfully update the Fusion incident.</p>"
-                                                                                },
-                                                                                "path": "/Incidents/Comment"
-                                                                            }
-                                                                        }
-                                                                    },
-                                                                    "runAfter": {
-                                                                        "Parse_Fusion_Ticket": [
-                                                                            "Succeeded"
-                                                                        ]
-                                                                    },
-                                                                    "type": "Foreach"
-                                                                }
-                                                            },
-                                                            "runAfter": {
-                                                                "Parse_Fusion_Finding": [
-                                                                    "Succeeded"
-                                                                ]
-                                                            },
-                                                            "type": "Foreach"
-                                                        }
-                                                    },
-                                                    "runAfter": {
-                                                        "Add_comment_to_incident_for_authorized_group": [
-                                                            "Succeeded"
-                                                        ]
-                                                    },
-                                                    "type": "Scope"
-                                                }
-                                            },
-                                            "runAfter": {
-                                                "Check_group_membership_-_Trustwave-Not-Authorized": [
-                                                    "Succeeded"
-                                                ]
-                                            },
-                                            "else": {
-                                                "actions": {
-                                                    "Add_comment_to_incident_for_user_being_disabled_recommendation": {
-                                                        "type": "ApiConnection",
-                                                        "inputs": {
-                                                            "host": {
-                                                                "connection": {
-                                                                    "name": "@parameters('$connections')['azuresentinel-3']['connectionId']"
-                                                                }
-                                                            },
-                                                            "method": "post",
-                                                            "body": {
-                                                                "incidentArmId": "@triggerBody()?['object']?['id']",
-                                                                "message": "<p>@{body('Get_user')?['displayName']} was requested to be isolated by @{triggerBody()?['object']?['properties']?['owner']?['assignedTo']}, but is considered a sensitive user that Trustwave does not have permission to disable on your behalf. Please review the incident and take the appropriate action. Please let us know if you have any questions on this action.</p><br><br>"
-                                                            },
-                                                            "path": "/Incidents/Comment"
-                                                        }
-                                                    },
-                                                    "Fusion_Finding_Update_for_Recommendation": {
-                                                        "actions": {
-                                                            "HTTP_-_Get_Fusion_Finding_based_on_Sentinel_ID_-_recommend": {
-                                                                "type": "Http",
-                                                                "inputs": {
-                                                                    "uri": "https://api.fusion.trustwave.com/v2/findings?detail=%22%2A@{triggerBody()?['object']?['properties']?['providerIncidentId']}%2A%22",
-                                                                    "method": "GET",
-                                                                    "headers": {
-                                                                        "Authorization": "Bearer @{parameters('Fusion-Token')}",
-                                                                        "accept": "application/json"
-                                                                    }
-                                                                }
-                                                            },
-                                                            "Parse_Fusion_Finding_-_recommend": {
-                                                                "runAfter": {
-                                                                    "HTTP_-_Get_Fusion_Finding_based_on_Sentinel_ID_-_recommend": [
-                                                                        "Succeeded"
-                                                                    ]
-                                                                },
-                                                                "type": "ParseJson",
-                                                                "inputs": {
-                                                                    "content": "@body('HTTP_-_Get_Fusion_Finding_based_on_Sentinel_ID_-_recommend')",
-                                                                    "schema": {
-                                                                        "properties": {
-                                                                            "items": {
-                                                                                "items": {
-                                                                                    "properties": {
-                                                                                        "analystNotes": {
-                                                                                            "type": "array"
-                                                                                        },
-                                                                                        "child": {
-                                                                                            "type": "boolean"
-                                                                                        },
-                                                                                        "classification": {
-                                                                                            "type": "string"
-                                                                                        },
-                                                                                        "createdOn": {
-                                                                                            "type": "string"
-                                                                                        },
-                                                                                        "customerId": {
-                                                                                            "type": "integer"
-                                                                                        },
-                                                                                        "customerName": {
-                                                                                            "type": "string"
-                                                                                        },
-                                                                                        "destination": {},
-                                                                                        "detail": {
-                                                                                            "type": "string"
-                                                                                        },
-                                                                                        "id": {
-                                                                                            "type": "string"
-                                                                                        },
-                                                                                        "priority": {
-                                                                                            "type": "integer"
-                                                                                        },
-                                                                                        "severity": {
-                                                                                            "type": "integer"
-                                                                                        },
-                                                                                        "soarAction": {},
-                                                                                        "source": {},
-                                                                                        "sourceSystem": {
-                                                                                            "type": "string"
-                                                                                        },
-                                                                                        "status": {},
-                                                                                        "summary": {
-                                                                                            "type": "string"
-                                                                                        },
-                                                                                        "type": {
-                                                                                            "type": "string"
-                                                                                        },
-                                                                                        "updatedOn": {
-                                                                                            "type": "string"
-                                                                                        }
-                                                                                    },
-                                                                                    "required": [
-                                                                                        "analystNotes",
-                                                                                        "child",
-                                                                                        "classification",
-                                                                                        "createdOn",
-                                                                                        "customerId",
-                                                                                        "customerName",
-                                                                                        "destination",
-                                                                                        "detail",
-                                                                                        "id",
-                                                                                        "priority",
-                                                                                        "severity",
-                                                                                        "soarAction",
-                                                                                        "source",
-                                                                                        "sourceSystem",
-                                                                                        "status",
-                                                                                        "summary",
-                                                                                        "type",
-                                                                                        "updatedOn"
-                                                                                    ],
-                                                                                    "type": "object"
-                                                                                },
-                                                                                "type": "array"
-                                                                            },
-                                                                            "lastPageNumber": {
-                                                                                "type": "integer"
-                                                                            },
-                                                                            "pageNumber": {
-                                                                                "type": "integer"
-                                                                            },
-                                                                            "pageSize": {
-                                                                                "type": "integer"
-                                                                            },
-                                                                            "sorting": {
-                                                                                "items": {
-                                                                                    "type": "string"
-                                                                                },
-                                                                                "type": "array"
-                                                                            },
-                                                                            "totalCount": {
-                                                                                "type": "integer"
-                                                                            }
-                                                                        },
-                                                                        "type": "object"
-                                                                    }
-                                                                }
-                                                            },
-                                                            "Array_Loop_recommend": {
-                                                                "foreach": "@body('Parse_Fusion_Finding_-_recommend')?['items']",
-                                                                "actions": {
-                                                                    "HTTP_-_Update_Fusion_Finding_Analyst_Notes_-_recommend": {
-                                                                        "type": "Http",
-                                                                        "inputs": {
-                                                                            "uri": "https://api.fusion.trustwave.com/v2/findings/@{item()?['id']}",
-                                                                            "method": "PATCH",
-                                                                            "headers": {
-                                                                                "Authorization": "Bearer @{parameters('Fusion-Token')}",
-                                                                                "accept": "application/json"
-                                                                            },
-                                                                            "body": {
-                                                                                "analystNotes": [
-                                                                                    {
-                                                                                        "actor": "@{triggerBody()?['object']?['properties']?['owner']?['email']}",
-                                                                                        "text": "Disabled User action has been recommended on@{body('Get_user')?['displayName']} by @{triggerBody()?['object']?['properties']?['owner']}",
-                                                                                        "timestamp": "@{utcNow()}"
-                                                                                    }
-                                                                                ]
-                                                                            }
-                                                                        }
-                                                                    },
-                                                                    "Add_comment_to_incident_for_recommended_action": {
-                                                                        "runAfter": {
-                                                                            "HTTP_-_Update_Fusion_Finding_Analyst_Notes_-_recommend": [
-                                                                                "Failed"
-                                                                            ]
-                                                                        },
-                                                                        "type": "ApiConnection",
-                                                                        "inputs": {
-                                                                            "host": {
-                                                                                "connection": {
-                                                                                    "name": "@parameters('$connections')['azuresentinel']['connectionId']"
-                                                                                }
-                                                                            },
-                                                                            "method": "post",
-                                                                            "body": {
-                                                                                "incidentArmId": "@triggerBody()?['object']?['id']",
-                                                                                "message": "<p class=\"editor-paragraph\">Could not associate XDR Incident with Fusion Finding. Finding Notes have not been updated. We also cannot update the Fusion Incident Ticket since the Finding was not found.</p>"
-                                                                            },
-                                                                            "path": "/Incidents/Comment"
-                                                                        }
-                                                                    },
-                                                                    "HTTP_-_Get_Ticket_ID_-_recommend": {
-                                                                        "runAfter": {
-                                                                            "HTTP_-_Update_Fusion_Finding_Analyst_Notes_-_recommend": [
-                                                                                "Succeeded"
-                                                                            ]
-                                                                        },
-                                                                        "type": "Http",
-                                                                        "inputs": {
-                                                                            "uri": "https://api.fusion.trustwave.com/v2/tickets?findingIds=@{item()?['id']}",
-                                                                            "method": "GET",
-                                                                            "headers": {
-                                                                                "Authorization": "Bearer @{parameters('Fusion-Token')}",
-                                                                                "accept": "application/json"
-                                                                            }
-                                                                        }
-                                                                    },
-                                                                    "Parse_Fusion_Ticket_-_recommend": {
-                                                                        "runAfter": {
-                                                                            "HTTP_-_Get_Ticket_ID_-_recommend": [
-                                                                                "Succeeded"
-                                                                            ]
-                                                                        },
-                                                                        "type": "ParseJson",
-                                                                        "inputs": {
-                                                                            "content": "@body('HTTP_-_Get_Ticket_ID_-_recommend')",
-                                                                            "schema": {
-                                                                                "type": "object",
-                                                                                "properties": {
-                                                                                    "items": {
-                                                                                        "type": "array",
-                                                                                        "items": {
-                                                                                            "type": "object",
-                                                                                            "properties": {
-                                                                                                "number": {
-                                                                                                    "type": "string"
-                                                                                                },
-                                                                                                "priority": {
-                                                                                                    "type": "string"
-                                                                                                },
-                                                                                                "type": {
-                                                                                                    "type": "string"
-                                                                                                },
-                                                                                                "subject": {
-                                                                                                    "type": "string"
-                                                                                                },
-                                                                                                "description": {
-                                                                                                    "type": "string"
-                                                                                                },
-                                                                                                "customerId": {
-                                                                                                    "type": "integer"
-                                                                                                },
-                                                                                                "category": {
-                                                                                                    "type": "string"
-                                                                                                },
-                                                                                                "status": {
-                                                                                                    "type": "string"
-                                                                                                },
-                                                                                                "subCategory": {
-                                                                                                    "type": "string"
-                                                                                                },
-                                                                                                "investigation": {
-                                                                                                    "type": "boolean"
-                                                                                                },
-                                                                                                "notes": {
-                                                                                                    "type": "array"
-                                                                                                },
-                                                                                                "assetIds": {
-                                                                                                    "type": "array"
-                                                                                                },
-                                                                                                "createdOn": {
-                                                                                                    "type": "string"
-                                                                                                },
-                                                                                                "updatedOn": {
-                                                                                                    "type": "string"
-                                                                                                },
-                                                                                                "urgency": {
-                                                                                                    "type": "string"
-                                                                                                },
-                                                                                                "soarActions": {},
-                                                                                                "soarActionsTaken": {},
-                                                                                                "performedBy": {
-                                                                                                    "type": "string"
-                                                                                                },
-                                                                                                "closeNotes": {
-                                                                                                    "type": "string"
-                                                                                                },
-                                                                                                "impact": {
-                                                                                                    "type": "string"
-                                                                                                },
-                                                                                                "createdBy": {
-                                                                                                    "type": "string"
-                                                                                                },
-                                                                                                "findings": {
-                                                                                                    "type": "array",
-                                                                                                    "items": {
-                                                                                                        "type": "object",
-                                                                                                        "properties": {
-                                                                                                            "findingId": {
-                                                                                                                "type": "string"
-                                                                                                            },
-                                                                                                            "classificationCode": {
-                                                                                                                "type": "string"
-                                                                                                            },
-                                                                                                            "classification": {
-                                                                                                                "type": "string"
-                                                                                                            }
-                                                                                                        },
-                                                                                                        "required": [
-                                                                                                            "findingId",
-                                                                                                            "classificationCode",
-                                                                                                            "classification"
-                                                                                                        ]
-                                                                                                    }
-                                                                                                },
-                                                                                                "updatedBy": {
-                                                                                                    "type": "string"
-                                                                                                },
-                                                                                                "customerName": {
-                                                                                                    "type": "string"
-                                                                                                },
-                                                                                                "survey": {
-                                                                                                    "type": "boolean"
-                                                                                                },
-                                                                                                "changeDetails": {}
-                                                                                            },
-                                                                                            "required": [
-                                                                                                "number",
-                                                                                                "priority",
-                                                                                                "type",
-                                                                                                "subject",
-                                                                                                "description",
-                                                                                                "customerId",
-                                                                                                "category",
-                                                                                                "status",
-                                                                                                "subCategory",
-                                                                                                "investigation",
-                                                                                                "notes",
-                                                                                                "assetIds",
-                                                                                                "createdOn",
-                                                                                                "updatedOn",
-                                                                                                "urgency",
-                                                                                                "soarActions",
-                                                                                                "soarActionsTaken",
-                                                                                                "performedBy",
-                                                                                                "closeNotes",
-                                                                                                "impact",
-                                                                                                "createdBy",
-                                                                                                "findings",
-                                                                                                "updatedBy",
-                                                                                                "customerName",
-                                                                                                "survey",
-                                                                                                "changeDetails"
-                                                                                            ]
-                                                                                        }
-                                                                                    },
-                                                                                    "lastPageNumber": {
-                                                                                        "type": "integer"
-                                                                                    },
-                                                                                    "pageNumber": {
-                                                                                        "type": "integer"
-                                                                                    },
-                                                                                    "pageSize": {
-                                                                                        "type": "integer"
-                                                                                    },
-                                                                                    "sorting": {
-                                                                                        "type": "array",
-                                                                                        "items": {
-                                                                                            "type": "string"
-                                                                                        }
-                                                                                    },
-                                                                                    "totalCount": {
-                                                                                        "type": "integer"
-                                                                                    }
-                                                                                }
-                                                                            }
-                                                                        }
-                                                                    },
-                                                                    "ticket_loop_-_recommend": {
-                                                                        "foreach": "@body('Parse_Fusion_Ticket_-_recommend')?['items']",
-                                                                        "actions": {
-                                                                            "HTTP_-_Update_Fusion_Ticket_-_Recommend": {
-                                                                                "type": "Http",
-                                                                                "inputs": {
-                                                                                    "uri": "https://api.fusion.trustwave.com/v1/tickets/@{item()?['number']}/comments",
-                                                                                    "method": "POST",
-                                                                                    "headers": {
-                                                                                        "Authorization": "Bearer @{parameters('Fusion-Token')}",
-                                                                                        "accept": "application/json"
-                                                                                    },
-                                                                                    "body": {
-                                                                                        "comment": "Current Microsoft Defender Incident owner:@{triggerBody()?['object']?['properties']?['owner']}, Disable User Action has been requested on @{body('Get_user')?['userPrincipalName']} from the Microsoft Console."
-                                                                                    }
-                                                                                }
-                                                                            },
-                                                                            "Add_comment_to_incident_if_fusion_ticket_update_fails_-_recommend": {
-                                                                                "runAfter": {
-                                                                                    "HTTP_-_Update_Fusion_Ticket_-_Recommend": [
-                                                                                        "Failed"
-                                                                                    ]
-                                                                                },
-                                                                                "type": "ApiConnection",
-                                                                                "inputs": {
-                                                                                    "host": {
-                                                                                        "connection": {
-                                                                                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
-                                                                                        }
-                                                                                    },
-                                                                                    "method": "post",
-                                                                                    "body": {
-                                                                                        "incidentArmId": "@{triggerBody()?['object']?['id']}",
-                                                                                        "message": "<p class=\"editor-paragraph\">Could not update the Fusion Ticket automatically.</p>"
-                                                                                    },
-                                                                                    "path": "/Incidents/Comment"
-                                                                                }
-                                                                            },
-                                                                            "Add_comment_to_incident_for_successful_fusion_update_-_recommend": {
-                                                                                "runAfter": {
-                                                                                    "HTTP_-_Update_Fusion_Ticket_-_Recommend": [
-                                                                                        "Succeeded"
-                                                                                    ]
-                                                                                },
-                                                                                "type": "ApiConnection",
-                                                                                "inputs": {
-                                                                                    "host": {
-                                                                                        "connection": {
-                                                                                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
-                                                                                        }
-                                                                                    },
-                                                                                    "method": "post",
-                                                                                    "body": {
-                                                                                        "incidentArmId": "@{triggerBody()?['object']?['id']}",
-                                                                                        "message": "<p class=\"editor-paragraph\">Trustwave was able to successfully update the Fusion incident.</p>"
-                                                                                    },
-                                                                                    "path": "/Incidents/Comment"
-                                                                                }
-                                                                            }
-                                                                        },
-                                                                        "runAfter": {
-                                                                            "Parse_Fusion_Ticket_-_recommend": [
-                                                                                "Succeeded"
-                                                                            ]
-                                                                        },
-                                                                        "type": "Foreach"
-                                                                    }
-                                                                },
-                                                                "runAfter": {
-                                                                    "Parse_Fusion_Finding_-_recommend": [
-                                                                        "Succeeded"
-                                                                    ]
-                                                                },
-                                                                "type": "Foreach"
-                                                            }
-                                                        },
-                                                        "runAfter": {
-                                                            "Add_comment_to_incident_for_user_being_disabled_recommendation": [
-                                                                "Succeeded"
-                                                            ]
-                                                        },
-                                                        "type": "Scope"
-                                                    }
-                                                }
-                                            },
-                                            "expression": {
-                                                "and": [
-                                                    {
-                                                        "equals": [
-                                                            "@body('Check_group_membership_-_Trustwave-Not-Authorized')?['value']",
-                                                            false
-                                                        ]
-                                                    }
-                                                ]
-                                            },
-                                            "type": "If"
-                                        },
-                                        "Get_user": {
-                                            "type": "ApiConnection",
-                                            "inputs": {
-                                                "host": {
-                                                    "connection": {
-                                                        "name": "@parameters('$connections')['azuread-1']['connectionId']"
-                                                    }
-                                                },
-                                                "method": "get",
-                                                "path": "/v1.0/users/@{encodeURIComponent(item()?['AadUserId'])}"
-                                            }
-                                        },
-                                        "Check_group_membership_-_Trustwave-Not-Authorized": {
-                                            "runAfter": {
-                                                "Get_user": [
-                                                    "Succeeded"
-                                                ]
-                                            },
-                                            "type": "ApiConnection",
-                                            "inputs": {
-                                                "host": {
-                                                    "connection": {
-                                                        "name": "@parameters('$connections')['azuread-2']['connectionId']"
-                                                    }
-                                                },
-                                                "method": "post",
-                                                "body": {
-                                                    "groupIds": [
-                                                        "146cefce-8108-426f-9a6d-705a08e4410e"
-                                                    ]
-                                                },
-                                                "path": "/v2/v1.0/users/@{encodeURIComponent(body('Get_user')?['id'])}/checkMemberGroups"
-                                            }
-                                        }
-                                    },
-                                    "else": {
-                                        "actions": {
-                                            "Add_comment_to_incident_when_no_ID_found": {
-                                                "type": "ApiConnection",
-                                                "inputs": {
-                                                    "host": {
-                                                        "connection": {
-                                                            "name": "@parameters('$connections')['azuresentinel-3']['connectionId']"
-                                                        }
-                                                    },
-                                                    "method": "post",
-                                                    "body": {
-                                                        "incidentArmId": "@triggerBody()?['object']?['id']",
-                                                        "message": "<p class=\"editor-paragraph\">@{item()?['Name']} was requested to be disabled by  @{triggerBody()?['object']?['properties']?['owner']?['assignedTo']}, but does not have an Entra ID in the Entities list. This user cannot be disabled by this runbook. Please review the user.</p>"
-                                                    },
-                                                    "path": "/Incidents/Comment"
-                                                }
-                                            }
-                                        }
-                                    },
-                                    "expression": {
-                                        "and": [
-                                            {
-                                                "not": {
-                                                    "equals": [
-                                                        "@item()?['AadUserId']",
-                                                        "@null"
-                                                    ]
-                                                }
-                                            }
-                                        ]
-                                    },
-                                    "type": "If"
-                                }
-                            },
-                            "runAfter": {
-                                "Entities_-_Get_Accounts": [
-                                    "Succeeded"
-                                ]
-                            },
-                            "type": "Foreach"
-                        },
-                        "Entities_-_Get_Accounts": {
+                       "Entities_-_Get_Accounts": {
                             "runAfter": {},
                             "type": "ApiConnection",
                             "inputs": {
@@ -1093,6 +121,370 @@
                                 "body": "@triggerBody()?['object']?['properties']?['relatedEntities']",
                                 "path": "/entities/account"
                             }
+                       },
+                       "For_each": {
+                            "foreach": "@body('Entities_-_Get_Accounts')?['Accounts']",
+                            "actions": {
+                                "Check_for_User_ID": {
+                                    "actions": {
+                                        "Get_user": {
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['azuread']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "get",
+                                                "path": "/v1.0/users/@{encodeURIComponent(item()?['AadUserId'])}"
+                                            }
+                                        },
+                                        "Check_group_membership_-_Trustwave-Not-Authorized": {
+                                            "runAfter": { "Get_user": [ "Succeeded" ] },
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['azuread']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "post",
+                                                "body": { "groupIds": [ "146cefce-8108-426f-9a6d-705a08e4410e" ] },
+                                                "path": "/v2/v1.0/users/@{encodeURIComponent(body('Get_user')?['id'])}/checkMemberGroups"
+                                            }
+                                        },
+                                        "Authorization_Permitted": {
+                                            "actions": {
+                                                "Update_user": {
+                                                    "type": "ApiConnection",
+                                                    "inputs": {
+                                                        "host": {
+                                                            "connection": {
+                                                                "name": "@parameters('$connections')['azuread']['connectionId']"
+                                                            }
+                                                        },
+                                                        "method": "patch",
+                                                        "body": { "accountEnabled": false },
+                                                        "path": "/v1.0/users/@{encodeURIComponent(body('Get_user')?['id'])}"
+                                                    }
+                                                },
+                                                "Add_comment_to_incident_for_authorized_group": {
+                                                    "runAfter": { "Update_user": [ "Succeeded" ] },
+                                                    "type": "ApiConnection",
+                                                    "inputs": {
+                                                        "host": {
+                                                            "connection": {
+                                                                "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                                            }
+                                                        },
+                                                        "method": "post",
+                                                        "body": {
+                                                            "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                            "message": "<p class=\"editor-paragraph\">@{body('Get_user')?['displayName']} has been disabled.</p>"
+                                                        },
+                                                        "path": "/Incidents/Comment"
+                                                    }
+                                                },
+                                                "Fusion_Finding_Update": {
+                                                    "actions": {
+                                                          "HTTP_-_Get_Fusion_Finding_based_on_Sentinel_ID": {
+                                                              "type": "Http",
+                                                              "inputs": {
+                                                                  "uri": "https://api.fusion.trustwave.com/v2/findings?detail=%22%2A@{triggerBody()?['object']?['properties']?['providerIncidentId']}%2A%22",
+                                                                  "method": "GET",
+                                                                  "headers": {
+                                                                      "Authorization": "Bearer @{parameters('Fusion-Token')}",
+                                                                      "accept": "application/json"
+                                                                  }
+                                                              }
+                                                          },
+                                                          "Parse_Fusion_Finding": {
+                                                              "runAfter": { "HTTP_-_Get_Fusion_Finding_based_on_Sentinel_ID": [ "Succeeded" ] },
+                                                              "type": "ParseJson",
+                                                              "inputs": {
+                                                                  "content": "@body('HTTP_-_Get_Fusion_Finding_based_on_Sentinel_ID')",
+                                                                  "schema": {"properties":{"items":{"items":{"properties":{"analystNotes":{"type":"array"},"child":{"type":"boolean"},"classification":{"type":"string"},"createdOn":{"type":"string"},"customerId":{"type":"integer"},"customerName":{"type":"string"},"destination":{},"detail":{"type":"string"},"id":{"type":"string"},"priority":{"type":"integer"},"severity":{"type":"integer"},"soarAction":{},"source":{},"sourceSystem":{"type":"string"},"status":{},"summary":{"type":"string"},"type":{"type":"string"},"updatedOn":{"type":"string"}},"required":["analystNotes","child","classification","createdOn","customerId","customerName","destination","detail","id","priority","severity","soarAction","source","sourceSystem","status","summary","type","updatedOn"],"type":"object"},"type":"array"},"lastPageNumber":{"type":"integer"},"pageNumber":{"type":"integer"},"pageSize":{"type":"integer"},"sorting":{"items":{"type":"string"},"type":"array"},"totalCount":{"type":"integer"}},"type":"object"}
+                                                              }
+                                                          },
+                                                          "Array_Loop": {
+                                                              "foreach": "@outputs('Parse_Fusion_Finding')?['body']?['items']",
+                                                              "actions": {
+                                                                  "HTTP_-_Update_Fusion_Finding_Analyst_Notes": {
+                                                                      "type": "Http",
+                                                                      "inputs": {
+                                                                          "uri": "https://api.fusion.trustwave.com/v2/findings/@{item()?['id']}",
+                                                                          "method": "PATCH",
+                                                                          "headers": {
+                                                                              "Authorization": "Bearer @{parameters('Fusion-Token')}",
+                                                                              "accept": "application/json"
+                                                                          },
+                                                                          "body": {"analystNotes":[{"actor":"@{triggerBody()?['object']?['properties']?['owner']?['email']}","text":"Disabled User action has been taken on @{body('Get_user')?['displayName']} by @{triggerBody()?['object']?['properties']?['owner']}","timestamp":"@{utcNow()}"}]}
+                                                                      }
+                                                                  },
+                                                                   "HTTP_-_Get_Ticket_ID": {
+                                                                      "runAfter": {"HTTP_-_Update_Fusion_Finding_Analyst_Notes": ["Succeeded"]},
+                                                                      "type": "Http",
+                                                                      "inputs": {
+                                                                          "uri": "https://api.fusion.trustwave.com/v2/tickets?findingIds=@{item()?['id']}",
+                                                                          "method": "GET",
+                                                                          "headers": {
+                                                                              "Authorization": "Bearer @{parameters('Fusion-Token')}",
+                                                                              "accept": "application/json"
+                                                                          }
+                                                                      }
+                                                                  },
+                                                                  "Add_comment_to_incident_if_fusion_finding_lookup_fails-copy": {
+                                                                       "runAfter": {"HTTP_-_Update_Fusion_Finding_Analyst_Notes": ["Failed"]},
+                                                                       "type": "ApiConnection",
+                                                                       "inputs": {
+                                                                          "host": { "connection": { "name": "@parameters('$connections')['azuresentinel']['connectionId']" } },
+                                                                          "method": "post",
+                                                                          "body": {
+                                                                              "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                                              "message": "<p class=\"editor-paragraph\">Could not associate XDR Incident with Fusion Finding. Finding Notes have not been updated.  We also cannot update the Fusion Incident Ticket since the Finding was not found.</p>"
+                                                                          },
+                                                                          "path": "/Incidents/Comment"
+                                                                       }
+                                                                  },
+                                                                  "Parse_Fusion_Ticket": {
+                                                                        "runAfter": {"HTTP_-_Get_Ticket_ID": ["Succeeded"]},
+                                                                        "type": "ParseJson",
+                                                                        "inputs": {
+                                                                            "content": "@body('HTTP_-_Get_Ticket_ID')",
+                                                                            "schema": {"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"number":{"type":"string"},"priority":{"type":"string"},"type":{"type":"string"},"subject":{"type":"string"},"description":{"type":"string"},"customerId":{"type":"integer"},"category":{"type":"string"},"status":{"type":"string"},"subCategory":{"type":"string"},"investigation":{"type":"boolean"},"notes":{"type":"array"},"assetIds":{"type":"array"},"createdOn":{"type":"string"},"updatedOn":{"type":"string"},"urgency":{"type":"string"},"soarActions":{},"soarActionsTaken":{},"performedBy":{"type":"string"},"closeNotes":{"type":"string"},"impact":{"type":"string"},"createdBy":{"type":"string"},"findings":{"type":"array","items":{"type":"object","properties":{"findingId":{"type":"string"},"classificationCode":{"type":"string"},"classification":{"type":"string"}},"required":["findingId","classificationCode","classification"]}},"updatedBy":{"type":"string"},"customerName":{"type":"string"},"survey":{"type":"boolean"},"changeDetails":{}},"required":["number","priority","type","subject","description","customerId","category","status","subCategory","investigation","notes","assetIds","createdOn","updatedOn","urgency","soarActions","soarActionsTaken","performedBy","closeNotes","impact","createdBy","findings","updatedBy","customerName","survey","changeDetails"]}},"lastPageNumber":{"type":"integer"},"pageNumber":{"type":"integer"},"pageSize":{"type":"integer"},"sorting":{"type":"array","items":{"type":"string"}},"totalCount":{"type":"integer"}}}
+                                                                        }
+                                                                  },
+                                                                   "ticket_loop": {
+                                                                       "foreach": "@body('Parse_Fusion_Ticket')?['items']",
+                                                                       "actions": {
+                                                                            "HTTP_-_Update_Fusion_Ticket": {
+                                                                               "type": "Http",
+                                                                               "inputs": {
+                                                                                    "uri": "https://api.fusion.trustwave.com/v1/tickets/@{item()?['number']}/comments",
+                                                                                    "method": "POST",
+                                                                                    "headers": {
+                                                                                        "Authorization": "Bearer @{parameters('Fusion-Token')}",
+                                                                                        "accept": "application/json"
+                                                                                    },
+                                                                                    "body": {
+                                                                                        "comment": "Current Microsoft Defender Incident owner:@{triggerBody()?['object']?['properties']?['owner']?['email']}, Disable User Action has been performed on @{body('Get_user')?['userPrincipalName']} from the Microsoft Console."
+                                                                                    }
+                                                                                }
+                                                                            },
+                                                                            "Add_comment_to_incident_if_fusion_ticket_update_fails": {
+                                                                                "runAfter": {"HTTP_-_Update_Fusion_Ticket": ["Failed"]},
+                                                                                "type": "ApiConnection",
+                                                                                "inputs": {
+                                                                                    "host": {"connection": {"name": "@parameters('$connections')['azuresentinel']['connectionId']"}},
+                                                                                    "method": "post",
+                                                                                    "body": {
+                                                                                         "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                                                         "message": "<p class=\"editor-paragraph\">Could not update the Fusion Ticket automatically.</p>"
+                                                                                     },
+                                                                                    "path": "/Incidents/Comment"
+                                                                                }
+                                                                            },
+                                                                             "Add_comment_to_incident_for_successful_fusion_update": {
+                                                                                 "runAfter": {"HTTP_-_Update_Fusion_Ticket": ["Succeeded"]},
+                                                                                 "type": "ApiConnection",
+                                                                                 "inputs": {
+                                                                                     "host": {"connection": {"name": "@parameters('$connections')['azuresentinel']['connectionId']"}},
+                                                                                     "method": "post",
+                                                                                     "body": {
+                                                                                          "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                                                          "message": "<p class=\"editor-paragraph\">Trustwave was able to successfully update the Fusion incident.</p>"
+                                                                                      },
+                                                                                     "path": "/Incidents/Comment"
+                                                                                 }
+                                                                             }
+                                                                        }, // End ticket_loop actions
+                                                                        "runAfter": {"Parse_Fusion_Ticket": ["Succeeded"]},
+                                                                        "type": "Foreach"
+                                                                   } // End ticket_loop
+                                                              }, // End Array_Loop actions
+                                                              "runAfter": { "Parse_Fusion_Finding": [ "Succeeded" ] },
+                                                              "type": "Foreach"
+                                                          } // End Array_Loop
+                                                    },
+                                                    "runAfter": { "Add_comment_to_incident_for_authorized_group": [ "Succeeded" ] },
+                                                    "type": "Scope"
+                                                }
+                                            },
+                                            "runAfter": { "Check_group_membership_-_Trustwave-Not-Authorized": [ "Succeeded" ] },
+                                            "else": {
+                                                "actions": {
+                                                    "Add_comment_to_incident_for_user_being_disabled_recommendation": {
+                                                        "type": "ApiConnection",
+                                                        "inputs": {
+                                                            "host": {
+                                                                "connection": {
+                                                                    "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                                                }
+                                                            },
+                                                            "method": "post",
+                                                            "body": {
+                                                                "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                                "message": "<p>@{body('Get_user')?['displayName']} was requested to be isolated by @{triggerBody()?['object']?['properties']?['owner']?['assignedTo']}, but is considered a sensitive user that Trustwave does not have permission to disable on your behalf. Please review the incident and take the appropriate action. Please let us know if you have any questions on this action.</p><br><br>"
+                                                            },
+                                                            "path": "/Incidents/Comment"
+                                                        }
+                                                    },
+                                                    "Fusion_Finding_Update_for_Recommendation": {
+                                                        "actions": {
+                                                              "HTTP_-_Get_Fusion_Finding_based_on_Sentinel_ID_-_recommend": {
+                                                                   "type": "Http",
+                                                                   "inputs": {
+                                                                        "uri": "https://api.fusion.trustwave.com/v2/findings?detail=%22%2A@{triggerBody()?['object']?['properties']?['providerIncidentId']}%2A%22",
+                                                                        "method": "GET",
+                                                                        "headers": {
+                                                                            "Authorization": "Bearer @{parameters('Fusion-Token')}",
+                                                                            "accept": "application/json"
+                                                                        }
+                                                                    }
+                                                               },
+                                                               "Parse_Fusion_Finding_-_recommend": {
+                                                                   "runAfter": {"HTTP_-_Get_Fusion_Finding_based_on_Sentinel_ID_-_recommend": ["Succeeded"]},
+                                                                   "type": "ParseJson",
+                                                                   "inputs": {
+                                                                        "content": "@body('HTTP_-_Get_Fusion_Finding_based_on_Sentinel_ID_-_recommend')",
+                                                                        "schema": {"properties":{"items":{"items":{"properties":{"analystNotes":{"type":"array"},"child":{"type":"boolean"},"classification":{"type":"string"},"createdOn":{"type":"string"},"customerId":{"type":"integer"},"customerName":{"type":"string"},"destination":{},"detail":{"type":"string"},"id":{"type":"string"},"priority":{"type":"integer"},"severity":{"type":"integer"},"soarAction":{},"source":{},"sourceSystem":{"type":"string"},"status":{},"summary":{"type":"string"},"type":{"type":"string"},"updatedOn":{"type":"string"}},"required":["analystNotes","child","classification","createdOn","customerId","customerName","destination","detail","id","priority","severity","soarAction","source","sourceSystem","status","summary","type","updatedOn"],"type":"object"},"type":"array"},"lastPageNumber":{"type":"integer"},"pageNumber":{"type":"integer"},"pageSize":{"type":"integer"},"sorting":{"items":{"type":"string"},"type":"array"},"totalCount":{"type":"integer"}},"type":"object"}
+                                                                    }
+                                                                },
+                                                               "Array_Loop_recommend": {
+                                                                    "foreach": "@body('Parse_Fusion_Finding_-_recommend')?['items']",
+                                                                    "actions": {
+                                                                        "HTTP_-_Update_Fusion_Finding_Analyst_Notes_-_recommend": {
+                                                                             "type": "Http",
+                                                                             "inputs": {
+                                                                                "uri": "https://api.fusion.trustwave.com/v2/findings/@{item()?['id']}",
+                                                                                "method": "PATCH",
+                                                                                "headers": {
+                                                                                    "Authorization": "Bearer @{parameters('Fusion-Token')}",
+                                                                                    "accept": "application/json"
+                                                                                 },
+                                                                                "body": { "analystNotes": [{"actor":"@{triggerBody()?['object']?['properties']?['owner']?['email']}","text":"Disabled User action has been recommended on@{body('Get_user')?['displayName']} by @{triggerBody()?['object']?['properties']?['owner']}","timestamp":"@{utcNow()}"}]}
+                                                                             }
+                                                                        },
+                                                                         "Add_comment_to_incident_for_recommended_action": {
+                                                                              "runAfter": {"HTTP_-_Update_Fusion_Finding_Analyst_Notes_-_recommend": ["Failed"]},
+                                                                              "type": "ApiConnection",
+                                                                              "inputs": {
+                                                                                  "host": {"connection": {"name": "@parameters('$connections')['azuresentinel']['connectionId']"}},
+                                                                                  "method": "post",
+                                                                                  "body": {
+                                                                                       "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                                                       "message": "<p class=\"editor-paragraph\">Could not associate XDR Incident with Fusion Finding. Finding Notes have not been updated. We also cannot update the Fusion Incident Ticket since the Finding was not found.</p>"
+                                                                                  },
+                                                                                  "path": "/Incidents/Comment"
+                                                                              }
+                                                                         },
+                                                                         "HTTP_-_Get_Ticket_ID_-_recommend": {
+                                                                              "runAfter": {"HTTP_-_Update_Fusion_Finding_Analyst_Notes_-_recommend": ["Succeeded"]},
+                                                                              "type": "Http",
+                                                                              "inputs": {
+                                                                                  "uri": "https://api.fusion.trustwave.com/v2/tickets?findingIds=@{item()?['id']}",
+                                                                                  "method": "GET",
+                                                                                  "headers": {
+                                                                                      "Authorization": "Bearer @{parameters('Fusion-Token')}",
+                                                                                      "accept": "application/json"
+                                                                                  }
+                                                                              }
+                                                                         },
+                                                                          "Parse_Fusion_Ticket_-_recommend": {
+                                                                              "runAfter": {"HTTP_-_Get_Ticket_ID_-_recommend": ["Succeeded"]},
+                                                                              "type": "ParseJson",
+                                                                              "inputs": {
+                                                                                    "content": "@body('HTTP_-_Get_Ticket_ID_-_recommend')",
+                                                                                    "schema": {"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"number":{"type":"string"},"priority":{"type":"string"},"type":{"type":"string"},"subject":{"type":"string"},"description":{"type":"string"},"customerId":{"type":"integer"},"category":{"type":"string"},"status":{"type":"string"},"subCategory":{"type":"string"},"investigation":{"type":"boolean"},"notes":{"type":"array"},"assetIds":{"type":"array"},"createdOn":{"type":"string"},"updatedOn":{"type":"string"},"urgency":{"type":"string"},"soarActions":{},"soarActionsTaken":{},"performedBy":{"type":"string"},"closeNotes":{"type":"string"},"impact":{"type":"string"},"createdBy":{"type":"string"},"findings":{"type":"array","items":{"type":"object","properties":{"findingId":{"type":"string"},"classificationCode":{"type":"string"},"classification":{"type":"string"}},"required":["findingId","classificationCode","classification"]}},"updatedBy":{"type":"string"},"customerName":{"type":"string"},"survey":{"type":"boolean"},"changeDetails":{}},"required":["number","priority","type","subject","description","customerId","category","status","subCategory","investigation","notes","assetIds","createdOn","updatedOn","urgency","soarActions","soarActionsTaken","performedBy","closeNotes","impact","createdBy","findings","updatedBy","customerName","survey","changeDetails"]}},"lastPageNumber":{"type":"integer"},"pageNumber":{"type":"integer"},"pageSize":{"type":"integer"},"sorting":{"type":"array","items":{"type":"string"}},"totalCount":{"type":"integer"}}}
+                                                                               }
+                                                                          },
+                                                                          "ticket_loop_-_recommend": {
+                                                                              "foreach": "@body('Parse_Fusion_Ticket_-_recommend')?['items']",
+                                                                              "actions": {
+                                                                                    "HTTP_-_Update_Fusion_Ticket_-_Recommend": {
+                                                                                         "type": "Http",
+                                                                                         "inputs": {
+                                                                                             "uri": "https://api.fusion.trustwave.com/v1/tickets/@{item()?['number']}/comments",
+                                                                                             "method": "POST",
+                                                                                             "headers": {
+                                                                                                 "Authorization": "Bearer @{parameters('Fusion-Token')}",
+                                                                                                 "accept": "application/json"
+                                                                                             },
+                                                                                             "body": {
+                                                                                                 "comment": "Current Microsoft Defender Incident owner:@{triggerBody()?['object']?['properties']?['owner']}, Disable User Action has been requested on @{body('Get_user')?['userPrincipalName']} from the Microsoft Console."
+                                                                                             }
+                                                                                          }
+                                                                                     },
+                                                                                      "Add_comment_to_incident_if_fusion_ticket_update_fails_-_recommend": {
+                                                                                           "runAfter": {"HTTP_-_Update_Fusion_Ticket_-_Recommend": ["Failed"]},
+                                                                                           "type": "ApiConnection",
+                                                                                           "inputs": {
+                                                                                               "host": {"connection": {"name": "@parameters('$connections')['azuresentinel']['connectionId']"}},
+                                                                                               "method": "post",
+                                                                                               "body": {
+                                                                                                   "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                                                                   "message": "<p class=\"editor-paragraph\">Could not update the Fusion Ticket automatically.</p>"
+                                                                                               },
+                                                                                               "path": "/Incidents/Comment"
+                                                                                            }
+                                                                                      },
+                                                                                       "Add_comment_to_incident_for_successful_fusion_update_-_recommend": {
+                                                                                            "runAfter": {"HTTP_-_Update_Fusion_Ticket_-_Recommend": ["Succeeded"]},
+                                                                                            "type": "ApiConnection",
+                                                                                            "inputs": {
+                                                                                                "host": {"connection": {"name": "@parameters('$connections')['azuresentinel']['connectionId']"}},
+                                                                                                "method": "post",
+                                                                                                "body": {
+                                                                                                    "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                                                                    "message": "<p class=\"editor-paragraph\">Trustwave was able to successfully update the Fusion incident.</p>"
+                                                                                                 },
+                                                                                                "path": "/Incidents/Comment"
+                                                                                             }
+                                                                                        }
+                                                                              }, // End ticket_loop_-_recommend actions
+                                                                              "runAfter": {"Parse_Fusion_Ticket_-_recommend": ["Succeeded"]},
+                                                                              "type": "Foreach"
+                                                                          } // End ticket_loop_-_recommend
+                                                                    }, // End Array_Loop_recommend actions
+                                                                    "runAfter": {"Parse_Fusion_Finding_-_recommend": ["Succeeded"]},
+                                                                    "type": "Foreach"
+                                                               } // End Array_Loop_recommend
+                                                        },
+                                                        "runAfter": { "Add_comment_to_incident_for_user_being_disabled_recommendation": [ "Succeeded" ] },
+                                                        "type": "Scope"
+                                                    }
+                                                }
+                                            },
+                                            "expression": { "and": [ { "equals": [ "@body('Check_group_membership_-_Trustwave-Not-Authorized')?['value']", false ] } ] },
+                                            "type": "If"
+                                        }
+                                    },
+                                    "else": {
+                                        "actions": {
+                                            "Add_comment_to_incident_when_no_ID_found": {
+                                                "type": "ApiConnection",
+                                                "inputs": {
+                                                    "host": {
+                                                        "connection": {
+                                                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                                        }
+                                                    },
+                                                    "method": "post",
+                                                    "body": {
+                                                        "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                        "message": "<p class=\"editor-paragraph\">@{item()?['Name']} was requested to be disabled by  @{triggerBody()?['object']?['properties']?['owner']?['assignedTo']}, but does not have an Entra ID in the Entities list. This user cannot be disabled by this runbook. Please review the user.</p>"
+                                                    },
+                                                    "path": "/Incidents/Comment"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "expression": { "and": [ { "not": { "equals": [ "@item()?['AadUserId']", "@null" ] } } ] },
+                                    "type": "If"
+                                }
+                           },
+                           "runAfter": { "Entities_-_Get_Accounts": [ "Succeeded" ] },
+                           "type": "Foreach"
                         }
                     },
                     "outputs": {}
@@ -1100,35 +492,20 @@
                 "parameters": {
                     "$connections": {
                         "value": {
-                            "azuresentinel-3": {
-                                "id": "/subscriptions/c5689f2c-8d0b-42f6-8d80-0f9b83c06d0a/providers/Microsoft.Web/locations/eastus/managedApis/azuresentinel",
-                                "connectionId": "[parameters('connections_azuresentinel_6_externalid')]",
-                                "connectionName": "azuresentinel-6"
-                            },
-                            "azuresentinel-4": {
-                                "id": "/subscriptions/c5689f2c-8d0b-42f6-8d80-0f9b83c06d0a/providers/Microsoft.Web/locations/eastus/managedApis/azuresentinel",
-                                "connectionId": "[parameters('connections_azuresentinel_8_externalid')]",
-                                "connectionName": "azuresentinel-8"
-                            },
-                            "azuread-2": {
-                                "id": "/subscriptions/c5689f2c-8d0b-42f6-8d80-0f9b83c06d0a/providers/Microsoft.Web/locations/eastus/managedApis/azuread",
-                                "connectionId": "[parameters('connections_azuread_4_externalid')]",
-                                "connectionName": "azuread-4"
-                            },
                             "azuresentinel": {
-                                "id": "/subscriptions/c5689f2c-8d0b-42f6-8d80-0f9b83c06d0a/providers/Microsoft.Web/locations/eastus/managedApis/azuresentinel",
-                                "connectionId": "[parameters('connections_azuresentinel_Isolate_MDEMachine_externalid')]",
-                                "connectionName": "azuresentinel-Isolate-MDEMachine",
+                                "connectionId": "[resourceId('Microsoft.Web/connections', parameters('sentinelConnectionName'))]",
+                                "connectionName": "[parameters('sentinelConnectionName')]",
                                 "connectionProperties": {
                                     "authentication": {
                                         "type": "ManagedServiceIdentity"
                                     }
-                                }
+                                },
+                                "id": "[variables('azureSentinelApiId')]"
                             },
-                            "azuread-1": {
-                                "id": "/subscriptions/6c5689f2c-8d0b-42f6-8d80-0f9b83c06d0a/providers/Microsoft.Web/locations/eastus/managedApis/azuread",
-                                "connectionId": "[parameters('connections_azuread_3_externalid')]",
-                                "connectionName": "azuread-3"
+                            "azuread": {
+                                "connectionId": "[resourceId('Microsoft.Web/connections', parameters('azureADConnectionName'))]",
+                                "connectionName": "[parameters('azureADConnectionName')]",
+                                "id": "[variables('azureADApiId')]"
                             }
                         }
                     }
