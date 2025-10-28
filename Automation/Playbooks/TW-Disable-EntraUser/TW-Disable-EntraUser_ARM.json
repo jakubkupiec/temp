@@ -7,23 +7,23 @@
             "type": "String"
         },
         "connections_azuresentinel_6_externalid": {
-            "defaultValue": "/subscriptions/69e238c0-023f-455f-8432-013a258cf548/resourceGroups/3PSIEM/providers/Microsoft.Web/connections/azuresentinel-6",
+            "defaultValue": "/subscriptions/c5689f2c-8d0b-42f6-8d80-0f9b83c06d0a/resourceGroups/sentinel/providers/Microsoft.Web/connections/azuresentinel-6",
             "type": "String"
         },
         "connections_azuresentinel_8_externalid": {
-            "defaultValue": "/subscriptions/69e238c0-023f-455f-8432-013a258cf548/resourceGroups/3PSIEM/providers/Microsoft.Web/connections/azuresentinel-8",
+            "defaultValue": "/subscriptions/c5689f2c-8d0b-42f6-8d80-0f9b83c06d0a/resourceGroups/sentinel/providers/Microsoft.Web/connections/azuresentinel-8",
             "type": "String"
         },
         "connections_azuread_4_externalid": {
-            "defaultValue": "/subscriptions/69e238c0-023f-455f-8432-013a258cf548/resourceGroups/3PSIEM/providers/Microsoft.Web/connections/azuread-4",
+            "defaultValue": "/subscriptions/c5689f2c-8d0b-42f6-8d80-0f9b83c06d0a/resourceGroups/sentinel/providers/Microsoft.Web/connections/azuread-4",
             "type": "String"
         },
         "connections_azuresentinel_Isolate_MDEMachine_externalid": {
-            "defaultValue": "/subscriptions/69e238c0-023f-455f-8432-013a258cf548/resourceGroups/3PSIEM/providers/Microsoft.Web/connections/azuresentinel-Isolate-MDEMachine",
+            "defaultValue": "/subscriptions/c5689f2c-8d0b-42f6-8d80-0f9b83c06d0a/resourceGroups/sentinel/providers/Microsoft.Web/connections/azuresentinel-Isolate-MDEMachine",
             "type": "String"
         },
         "connections_azuread_3_externalid": {
-            "defaultValue": "/subscriptions/69e238c0-023f-455f-8432-013a258cf548/resourceGroups/3PSIEM/providers/Microsoft.Web/connections/azuread-3",
+            "defaultValue": "/subscriptions/c5689f2c-8d0b-42f6-8d80-0f9b83c06d0a/resourceGroups/sentinel/providers/Microsoft.Web/connections/azuread-3",
             "type": "String"
         }
     },
@@ -1101,22 +1101,22 @@
                     "$connections": {
                         "value": {
                             "azuresentinel-3": {
-                                "id": "/subscriptions/69e238c0-023f-455f-8432-013a258cf548/providers/Microsoft.Web/locations/eastus/managedApis/azuresentinel",
+                                "id": "/subscriptions/c5689f2c-8d0b-42f6-8d80-0f9b83c06d0a/providers/Microsoft.Web/locations/eastus/managedApis/azuresentinel",
                                 "connectionId": "[parameters('connections_azuresentinel_6_externalid')]",
                                 "connectionName": "azuresentinel-6"
                             },
                             "azuresentinel-4": {
-                                "id": "/subscriptions/69e238c0-023f-455f-8432-013a258cf548/providers/Microsoft.Web/locations/eastus/managedApis/azuresentinel",
+                                "id": "/subscriptions/c5689f2c-8d0b-42f6-8d80-0f9b83c06d0a/providers/Microsoft.Web/locations/eastus/managedApis/azuresentinel",
                                 "connectionId": "[parameters('connections_azuresentinel_8_externalid')]",
                                 "connectionName": "azuresentinel-8"
                             },
                             "azuread-2": {
-                                "id": "/subscriptions/69e238c0-023f-455f-8432-013a258cf548/providers/Microsoft.Web/locations/eastus/managedApis/azuread",
+                                "id": "/subscriptions/c5689f2c-8d0b-42f6-8d80-0f9b83c06d0a/providers/Microsoft.Web/locations/eastus/managedApis/azuread",
                                 "connectionId": "[parameters('connections_azuread_4_externalid')]",
                                 "connectionName": "azuread-4"
                             },
                             "azuresentinel": {
-                                "id": "/subscriptions/69e238c0-023f-455f-8432-013a258cf548/providers/Microsoft.Web/locations/eastus/managedApis/azuresentinel",
+                                "id": "/subscriptions/c5689f2c-8d0b-42f6-8d80-0f9b83c06d0a/providers/Microsoft.Web/locations/eastus/managedApis/azuresentinel",
                                 "connectionId": "[parameters('connections_azuresentinel_Isolate_MDEMachine_externalid')]",
                                 "connectionName": "azuresentinel-Isolate-MDEMachine",
                                 "connectionProperties": {
@@ -1126,7 +1126,7 @@
                                 }
                             },
                             "azuread-1": {
-                                "id": "/subscriptions/69e238c0-023f-455f-8432-013a258cf548/providers/Microsoft.Web/locations/eastus/managedApis/azuread",
+                                "id": "/subscriptions/6c5689f2c-8d0b-42f6-8d80-0f9b83c06d0a/providers/Microsoft.Web/locations/eastus/managedApis/azuread",
                                 "connectionId": "[parameters('connections_azuread_3_externalid')]",
                                 "connectionName": "azuread-3"
                             }
