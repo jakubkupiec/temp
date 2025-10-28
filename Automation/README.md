@@ -9,7 +9,7 @@ Click **Deploy to Azure** to deploy a playbook into your subscription.
 
 Disables an Entra ID user account in response to Sentinel incidents.
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FRishiCPS%2FSentinel-Playbook-ARM-Templates%2Fmain%2FPlaybooks%2FTW-Disable-EntraUser%2FTW-Disable-EntraUser_ARM.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fjakubkupiec%2Ftemp%2Fmain%2FAutomation%2FPlaybooks%2FTW-Disable-EntraUser%2FTW-Disable-EntraUser_ARM.json)
 
 ---
 
