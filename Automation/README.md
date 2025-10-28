@@ -17,7 +17,7 @@ Disables an Entra ID user account in response to Sentinel incidents.
 
 Isolates a machine via Microsoft Defender for Endpoint when triggered from Sentinel.
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FRishiCPS%2FSentinel-Playbook-ARM-Templates%2Fmain%2FPlaybooks%2FTW-Isolate-MDEMachine%2FTW-Isolate-MDEMachine_ARM.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fjakubkupiec%2Ftemp%2Fmain%2FAutomation%2FPlaybooks%2FTW-Isolate-MDEMachine%2FTW-Isolate-MDEMachine_ARM.json)
 
 ---
 
